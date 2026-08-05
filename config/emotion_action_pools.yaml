@@ -1,0 +1,125 @@
+# Emotion action pools — behavior + level + interaction_mode → candidate ACT_* pool
+# Used by expressCalm, expressJoy, expressExcitement, expressAnxiety, expressFear, expressCuriosity
+
+expressCalm:
+  LOW:
+    solo:
+      - {unit_id: ACT_LIE_FLAT_ON_BELLY, weight: 1.0}
+      - {unit_id: ACT_LIE_ON_SIDE, weight: 1.0}
+      - {unit_id: ACT_STRETCH_LAZILY, weight: 1.0}
+      - {unit_id: ACT_LICK_PAWS, weight: 1.0}
+      - {unit_id: ACT_YAWN_SLOWLY, weight: 1.0}
+    interactive:
+      - {unit_id: ACT_LIE_BELLY_UP, weight: 1.0}
+      - {unit_id: ACT_WAIT_BY_DOOR, weight: 1.0}
+  HIGH:
+    solo:
+      - {unit_id: ACT_PATROL_SURROUNDINGS_SLOWLY, weight: 1.0}
+    interactive:
+      - {unit_id: ACT_LIE_ON_SIDE_BESIDE_PERSON, weight: 1.0}
+      - {unit_id: ACT_PAW_AT_OWNER, weight: 1.0}
+
+expressJoy:
+  LOW:
+    solo:
+      - {unit_id: ACT_SIT_AND_WAG_TAIL_GENTLY, weight: 1.0}
+      - {unit_id: ACT_STRETCH_BODY_RELAXEDLY, weight: 1.0}
+    interactive:
+      - {unit_id: ACT_WAG_TAIL_GENTLY, weight: 1.0}
+  MID:
+    solo:
+      - {unit_id: ACT_STEP_EXCITEDLY_IN_PLACE, weight: 1.0}
+      - {unit_id: ACT_SWAY_BODY_WITH_WAGGING_TAIL, weight: 1.0}
+    interactive:
+      - {unit_id: ACT_WAG_TAIL_FAST_AND_STEP_IN_PLACE, weight: 1.0}
+      - {unit_id: ACT_HOP_IN_PLACE_WITH_FRONT_PAWS_UP, weight: 1.0}
+      - {unit_id: ACT_NUDGE_OWNER_HAND_OR_LEG_WITH_NOSE, weight: 1.0}
+      - {unit_id: ACT_PLAY_BOW_INVITE, weight: 1.0}
+  HIGH:
+    solo:
+      - {unit_id: ACT_RUN_BACK_AND_FORTH, weight: 1.0}
+      - {unit_id: ACT_SPIN_IN_CIRCLE, weight: 1.0}
+    interactive:
+      - {unit_id: ACT_RAISE_TAIL_AND_WAG, weight: 1.0}
+      - {unit_id: ACT_POUNCE_FORWARD, weight: 1.0}
+      - {unit_id: ACT_BARK_SHORT_EXCITED, weight: 1.0}
+      - {unit_id: ACT_ROLL_OVER_AND_SHOW_BELLY, weight: 1.0}
+
+expressExcitement:
+  LOW:
+    solo:
+      - {unit_id: ACT_BEG_FOR_FOOD, weight: 1.0}
+    interactive:
+      - {unit_id: ACT_CARRY_AND_SHAKE, weight: 1.0}
+      - {unit_id: ACT_WIGGLE_BODY, weight: 1.0}
+      - {unit_id: ACT_TROT_AND_BOUNCE, weight: 1.0}
+  HIGH:
+    solo:
+      - {unit_id: ACT_MOVE_RAPIDLY, weight: 1.0}
+      - {unit_id: ACT_CIRCLE_AROUND, weight: 1.0}
+      - {unit_id: ACT_RUN_ZOOMIES, weight: 1.0}
+    interactive:
+      - {unit_id: ACT_JUMP_ON_PERSON, weight: 1.0}
+      - {unit_id: ACT_BARK_OR_WHINE, weight: 1.0}
+      - {unit_id: ACT_MOUTH_GENTLY, weight: 1.0}
+      - {unit_id: ACT_PLACE_PAW_ON_KNEE, weight: 1.0}
+      - {unit_id: ACT_FETCH_TOY, weight: 1.0}
+
+expressAnxiety:
+  LOW:
+    solo:
+      - {unit_id: ACT_PACE_BACK_AND_FORTH, weight: 1.0}
+      - {unit_id: ACT_LICK_LIPS, weight: 1.0}
+    interactive:
+      - {unit_id: ACT_WHINE_LOW, weight: 1.0}
+      - {unit_id: ACT_STARE_INTENTLY, weight: 1.0}
+      - {unit_id: ACT_TILT_HEAD, weight: 1.0}
+  HIGH:
+    solo:
+      - {unit_id: ACT_SCRATCH_FREQUENTLY, weight: 1.0}
+      - {unit_id: ACT_STIFFEN_BODY, weight: 1.0}
+      - {unit_id: ACT_TUCK_TAIL, weight: 1.0}
+      - {unit_id: ACT_DILATE_PUPILS, weight: 1.0}
+      - {unit_id: ACT_HIDE_AWAY, weight: 1.0}
+    interactive:
+      - {unit_id: ACT_WHINE_HIGH, weight: 1.0}
+      - {unit_id: ACT_CHECK_OWNER, weight: 1.0}
+
+expressFear:
+  LOW:
+    solo:
+      - {unit_id: ACT_FREEZE_ALERT, weight: 1.0}
+      - {unit_id: ACT_WALK_AWAY, weight: 1.0}
+      - {unit_id: ACT_RETREAT_WITH_TAIL_TUCKED, weight: 1.0}
+    interactive:
+      - {unit_id: ACT_GROWL_LOW, weight: 1.0}
+  HIGH:
+    solo:
+      - {unit_id: ACT_FLEE_QUICKLY, weight: 1.0}
+      - {unit_id: ACT_AVOID_AND_HIDE, weight: 1.0}
+      - {unit_id: ACT_TREMBLE_AND_SHAKE, weight: 1.0}
+      - {unit_id: ACT_LOSE_CONTROL, weight: 1.0}
+      - {unit_id: ACT_DILATE_PUPILS, weight: 1.0}
+    interactive:
+      - {unit_id: ACT_APPROACH_OWNER_FEARFULLY, weight: 1.0}
+      - {unit_id: ACT_CALL_FOR_HELP, weight: 1.0}
+
+expressCuriosity:
+  LOW:
+    solo:
+      - {unit_id: ACT_OBSERVE_QUIETLY, weight: 1.0}
+      - {unit_id: ACT_LOWER_BODY_AND_EXPLORE, weight: 1.0}
+    interactive:
+      - {unit_id: ACT_HOLD_TAIL_LEVEL_AND_WAG, weight: 1.0}
+      - {unit_id: ACT_TILT_HEAD, weight: 1.0}
+      - {unit_id: ACT_STARE_INTENTLY, weight: 1.0}
+  HIGH:
+    solo:
+      - {unit_id: ACT_STAND_AND_OBSERVE, weight: 1.0}
+      - {unit_id: ACT_STAND_ALERT, weight: 1.0}
+    interactive:
+      - {unit_id: ACT_APPROACH_SLOWLY, weight: 1.0}
+      - {unit_id: ACT_SNIFF_GROUND, weight: 1.0}
+      - {unit_id: ACT_PAW_AT_OBJECT, weight: 1.0}
+      - {unit_id: ACT_FOLLOW_MOVEMENT, weight: 1.0}
+      - {unit_id: ACT_CIRCLE_AND_INSPECT, weight: 1.0}

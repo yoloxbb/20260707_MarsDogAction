@@ -1,0 +1,11 @@
+#!/usr/bin/python3
+"""Launcher script for the MarsDog action executor ROS2 node.
+
+Uses /usr/bin/python3 explicitly to avoid venv Python (which lacks numpy
+and other ROS2 transitive dependencies).
+"""
+
+from marsdog_action_executor.node import main
+
+if __name__ == "__main__":
+    main()

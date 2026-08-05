@@ -1,0 +1,181 @@
+# MarsDog Action Executor — Behavior Alias Map
+#
+# Maps legacy behavior names to their resolved canonical behavior names,
+# optionally injecting default parameters. The Planner uses this map
+# during goal resolution so that upstream callers can use old names
+# without changes.
+#
+# Fields:
+#   resolved_behavior_name  — canonical behavior name in the catalog
+#   injected_params         — key-value params injected during resolution
+#   alias_reason            — human-readable tag explaining why the alias exists
+
+behavior_aliases:
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Legacy emotion-action behaviors → expression behaviors (with params)
+  # ──────────────────────────────────────────────────────────────────────────
+
+  wagTailFast:
+    resolved_behavior_name: expressJoy
+    injected_params: { level: MID, interaction_mode: interactive }
+    alias_reason: legacy_emotion_action_behavior
+
+  wagTailGently:
+    resolved_behavior_name: expressJoy
+    injected_params: { level: LOW, interaction_mode: interactive }
+    alias_reason: legacy_emotion_action_behavior
+
+  hopInPlace:
+    resolved_behavior_name: expressJoy
+    injected_params: { level: MID, interaction_mode: solo }
+    alias_reason: legacy_emotion_action_behavior
+
+  headTilt:
+    resolved_behavior_name: expressCuriosity
+    injected_params: { level: LOW, interaction_mode: interactive }
+    alias_reason: legacy_emotion_action_behavior
+
+  yawnSlowly:
+    resolved_behavior_name: expressCalm
+    injected_params: { level: LOW, interaction_mode: solo }
+    alias_reason: legacy_emotion_action_behavior
+
+  hideAway:
+    resolved_behavior_name: expressFear
+    injected_params: { level: HIGH, interaction_mode: solo }
+    alias_reason: legacy_emotion_action_behavior
+
+  playBow:
+    resolved_behavior_name: expressJoy
+    injected_params: { level: MID, interaction_mode: interactive }
+    alias_reason: legacy_emotion_action_behavior
+
+  spinInCircle:
+    resolved_behavior_name: expressJoy
+    injected_params: { level: HIGH, interaction_mode: solo }
+    alias_reason: legacy_emotion_action_behavior
+
+  restInPlace:
+    resolved_behavior_name: expressCalm
+    injected_params: { level: LOW, interaction_mode: solo }
+    alias_reason: legacy_emotion_action_behavior
+
+  freezeAlert:
+    resolved_behavior_name: expressFear
+    injected_params: { level: LOW, interaction_mode: solo }
+    alias_reason: legacy_emotion_action_behavior
+
+  fleeQuickly:
+    resolved_behavior_name: expressFear
+    injected_params: { level: HIGH, interaction_mode: solo }
+    alias_reason: legacy_emotion_action_behavior
+
+  trembleShake:
+    resolved_behavior_name: expressFear
+    injected_params: { level: HIGH, interaction_mode: solo }
+    alias_reason: legacy_emotion_action_behavior
+
+  approachSlowly:
+    resolved_behavior_name: expressCuriosity
+    injected_params: { level: HIGH, interaction_mode: interactive }
+    alias_reason: legacy_emotion_action_behavior
+
+  sniffGround:
+    resolved_behavior_name: expressCuriosity
+    injected_params: { level: HIGH, interaction_mode: solo }
+    alias_reason: legacy_emotion_action_behavior
+
+  pawAtObject:
+    resolved_behavior_name: expressCuriosity
+    injected_params: { level: HIGH, interaction_mode: solo }
+    alias_reason: legacy_emotion_action_behavior
+
+  paceBackAndForth:
+    resolved_behavior_name: expressAnxiety
+    injected_params: { level: LOW, interaction_mode: solo }
+    alias_reason: legacy_emotion_action_behavior
+
+  sleepOnSide:
+    resolved_behavior_name: expressCalm
+    injected_params: { level: LOW, interaction_mode: solo }
+    alias_reason: legacy_emotion_action_behavior
+
+  stretchLazily:
+    resolved_behavior_name: expressCalm
+    injected_params: { level: LOW, interaction_mode: solo }
+    alias_reason: legacy_emotion_action_behavior
+
+  nudgeWithNose:
+    resolved_behavior_name: expressJoy
+    injected_params: { level: MID, interaction_mode: interactive }
+    alias_reason: legacy_emotion_action_behavior
+
+  cuddlePose:
+    resolved_behavior_name: expressCalm
+    injected_params: { level: HIGH, interaction_mode: interactive }
+    alias_reason: legacy_emotion_action_behavior
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Old core behavior renames (simple name-to-name mappings)
+  # ──────────────────────────────────────────────────────────────────────────
+
+  seek_food_or_water:
+    resolved_behavior_name: eatNormally
+    injected_params: {}
+    alias_reason: legacy_core_behavior_rename
+
+  excretion_request:
+    resolved_behavior_name: defecate
+    injected_params: {}
+    alias_reason: legacy_core_behavior_rename
+
+  sleep_request:
+    resolved_behavior_name: sleepNow
+    injected_params: {}
+    alias_reason: legacy_core_behavior_rename
+
+  clean_self:
+    resolved_behavior_name: cleanSelf
+    injected_params: {}
+    alias_reason: legacy_core_behavior_rename
+
+  seek_social_interaction:
+    resolved_behavior_name: seekHumanInteraction
+    injected_params: {}
+    alias_reason: legacy_core_behavior_rename
+
+  explore_environment:
+    resolved_behavior_name: exploreRoom
+    injected_params: {}
+    alias_reason: legacy_core_behavior_rename
+
+  respond_owner_call:
+    resolved_behavior_name: seekHumanInteraction
+    injected_params: {}
+    alias_reason: legacy_core_behavior_rename
+
+  respond_touch_head:
+    resolved_behavior_name: seekHumanInteraction
+    injected_params: {}
+    alias_reason: legacy_core_behavior_rename
+
+  emergency_stop:
+    resolved_behavior_name: emergencyStop
+    injected_params: {}
+    alias_reason: legacy_core_behavior_rename
+
+  avoid_danger:
+    resolved_behavior_name: seekSafety
+    injected_params: {}
+    alias_reason: legacy_core_behavior_rename
+
+  express_fear:
+    resolved_behavior_name: expressFear
+    injected_params: {}
+    alias_reason: legacy_core_behavior_rename
+
+  express_happy:
+    resolved_behavior_name: expressJoy
+    injected_params: {}
+    alias_reason: legacy_core_behavior_rename

@@ -1,0 +1,46 @@
+# /execute_behavior — long-running behavior execution Action
+#
+# ═══════════════════════════════════════════════════════════════════════════
+# DEPRECATED — this definition has moved to marsdog_interfaces.
+#
+# This file is kept for backward compatibility during the transition
+# period.  It is NO LONGER the authoritative definition.
+#
+# The ros_node will try marsdog_interfaces.action.ExecuteBehavior first
+# and fall back to this local copy only if marsdog_interfaces is not
+# installed.  Once marsdog_interfaces is available in all workspaces
+# this file and the associated CMakeLists.txt action generation should
+# be removed.
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Client: /behavior_tree_node (marsdog_behavior)
+# Server: /action_executor_node (marsdog_action_executor)
+
+# ── Goal ──────────────────────────────────────────────────────────────
+string  goal_id            # UUID from client
+string  behavior_id        # Original signal ID
+string  behavior_name      # Behavior to execute
+int32   priority_level     # 0-6
+string  params_json        # JSON-encoded params (interactive, target_identity, ...)
+float64 timeout_sec        # Max execution time
+---
+# ── Result ────────────────────────────────────────────────────────────
+string  goal_id
+string  behavior_id
+string  behavior_name
+string  status             # SUCCESS / FAILURE / CANCELED / TIMEOUT
+string  result             # completed / canceled / timeout
+string  reason
+float64 reward
+string  emotion_delta_json
+string  need_delta_json
+---
+# ── Feedback ──────────────────────────────────────────────────────────
+string  goal_id
+string  behavior_id
+string  behavior_name
+string  status             # RUNNING
+float64 progress           # 0.0 - 1.0
+bool    safe_to_interrupt
+string  current_action     # Current action ID (e.g. ACT_TAIL_WAG_FAST)
+string  message            # Human-readable description

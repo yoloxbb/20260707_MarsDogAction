@@ -1,0 +1,21 @@
+[project]
+name = "marsdog-action-executor"
+version = "0.1.0"
+description = "MarsDog bionic robot dog behavior execution engine — converts behavior_name goals into staged action plans and drives execution"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+    "pytest>=9.0",
+]
+
+[project.scripts]
+marsdog-action-demo = "marsdog_action_executor.standalone_demo:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:launch_testing -p no:launch_testing_ros"

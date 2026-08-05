@@ -1,0 +1,2080 @@
+# MarsDog Action Executor — Behavior Templates
+#
+# Defines every canonical behavior as a staged pipeline of action candidates.
+# Each stage contains candidate unit_ids drawn from action_catalog.yaml.
+# The Planner selects one candidate per stage according to selection_policy
+# and the Executor runs stages sequentially, respecting loop, skip_on_fail,
+# condition_first, and success_condition constraints.
+#
+# Fields:
+#   behavior_name       — canonical behavior identifier
+#   description         — human-readable summary
+#   stages              — ordered list of stage definitions
+#     stage_name        — human-readable stage label
+#     stage_type        — prepare | eating | eliminating | groom | sleep_pose |
+#                         sleeping | wakeup | recover | recharge | orient |
+#                         express | observe | approach | greet | invite |
+#                         request | search | interact | explore | inspect |
+#                         exit
+#     selection_policy  — random_one | random | first | weighted | condition_first
+#     required          — true | false (stage must succeed for behavior success)
+#     skip_on_fail      — true | false (continue to next stage if this one fails)
+#     loop              — optional loop config: {min: N, max: M}
+#     fixed             — true | false (stage is mandatory, cannot be skipped)
+#     candidates        — list of candidate unit references
+#       unit_id         — ACT_* or TASK_* identifier from action_catalog.yaml
+#       weight          — selection weight (default 1.0)
+#     conditions        — runtime conditions dict for condition_first policy
+#     success_condition — dict describing when the stage is considered done
+
+behavior_templates:
+
+  # ╔════════════════════════════════════════════════════════════════════════════╗
+  # ║  SECTION 1: Physiological behaviors                                      ║
+  # ╚════════════════════════════════════════════════════════════════════════════╝
+
+  # ── eatNormally ───────────────────────────────────────────────────────────
+  # Stage pipeline: prepare(eating) → eating → interaction(optional,skipOnFail) → exit
+  eatNormally:
+    behavior_name: eatNormally
+    description: >
+      Approach food bowl at a normal pace, eat steadily, optionally interact
+      with the owner mid-meal, then wind down and exit.
+    stages:
+      - stage_name: prepare
+        stage_type: prepare
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_SNIFF_BOWL_EDGE, weight: 1.0}
+          - {unit_id: ACT_PAW_AT_BOWL, weight: 0.8}
+          - {unit_id: ACT_SIT_OR_LIE_BY_BOWL, weight: 0.7}
+          - {unit_id: ACT_SNIFF_GROUND_FOR_CRUMBS, weight: 0.6}
+          - {unit_id: ACT_CHANGE_POSTURE, weight: 0.5}
+          - {unit_id: TASK_APPROACH_OBJECT, weight: 1.0}
+        conditions: {food_bowl_nearby: true}
+        success_condition:
+          type: posture_reached
+          target_posture: standing
+          max_distance_m: 0.5
+
+      - stage_name: eating
+        stage_type: eating
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LICK_FOOD, weight: 1.0}
+          - {unit_id: ACT_CHEW_OR_CARRY_FOOD, weight: 1.0}
+          - {unit_id: ACT_SCRATCH_FOOD, weight: 0.6}
+          - {unit_id: ACT_FAST_LICK_AND_SWALLOW, weight: 0.5}
+          - {unit_id: ACT_LICK_LIPS_AND_SWALLOW, weight: 0.4}
+        conditions: {food_in_bowl: true}
+        success_condition:
+          type: duration_elapsed_or_food_consumed
+          min_duration_sec: 4.0
+
+      - stage_name: interaction
+        stage_type: interaction
+        selection_policy: random_one
+        required: false
+        skip_on_fail: true
+        fixed: false
+        candidates:
+          - {unit_id: ACT_PAUSE_AND_LOOK_AT_OWNER, weight: 1.0}
+          - {unit_id: ACT_GROWL_WHILE_EATING, weight: 0.3}
+          - {unit_id: ACT_LICK_LIPS_OR_NOSE, weight: 0.8}
+        conditions: {owner_visible: true}
+        success_condition:
+          type: action_completed
+
+      - stage_name: exit
+        stage_type: exit
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LICK_LIPS_AND_SWALLOW, weight: 1.0}
+          - {unit_id: ACT_TURN_HEAD_AND_WIPE_MOUTH, weight: 0.9}
+          - {unit_id: ACT_BURP, weight: 0.4}
+          - {unit_id: ACT_LICK_LIPS_OR_NOSE, weight: 0.8}
+          - {unit_id: ACT_SHAKE_HEAD, weight: 0.7}
+          - {unit_id: ACT_WALK_AWAY_OR_LIE_DOWN, weight: 0.6}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── eatExcitedly ──────────────────────────────────────────────────────────
+  # Stage pipeline: prepare(fixed) → eating(fixed) → exit(fixed)
+  eatExcitedly:
+    behavior_name: eatExcitedly
+    description: >
+      Rush to food with high energy, eat rapidly and intensely, then exit quickly.
+      All stages are fixed (mandatory, cannot be skipped or reordered).
+    stages:
+      - stage_name: prepare
+        stage_type: prepare
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: true
+        candidates:
+          - {unit_id: ACT_CHASE_ROLLING_FOOD, weight: 1.0}
+          - {unit_id: ACT_SNIFF_BOWL_EDGE, weight: 0.9}
+          - {unit_id: ACT_PAW_AT_BOWL, weight: 0.8}
+          - {unit_id: TASK_APPROACH_OBJECT, weight: 1.0}
+        conditions: {food_bowl_nearby: true}
+        success_condition:
+          type: posture_reached
+          target_posture: standing
+          max_distance_m: 0.3
+
+      - stage_name: eating
+        stage_type: eating
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: true
+        candidates:
+          - {unit_id: ACT_FAST_LICK_AND_SWALLOW, weight: 1.0}
+          - {unit_id: ACT_CHEW_OR_CARRY_FOOD, weight: 0.9}
+          - {unit_id: ACT_LICK_FOOD, weight: 0.8}
+          - {unit_id: ACT_GROWL_WHILE_EATING, weight: 0.5}
+          - {unit_id: ACT_SCRATCH_FOOD, weight: 0.6}
+        conditions: {food_in_bowl: true}
+        success_condition:
+          type: duration_elapsed_or_food_consumed
+          min_duration_sec: 3.0
+
+      - stage_name: exit
+        stage_type: exit
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: true
+        candidates:
+          - {unit_id: ACT_LICK_LIPS_AND_SWALLOW, weight: 1.0}
+          - {unit_id: ACT_BURP, weight: 0.6}
+          - {unit_id: ACT_SHAKE_HEAD, weight: 0.7}
+          - {unit_id: ACT_TURN_HEAD_AND_WIPE_MOUTH, weight: 0.8}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── defecate ──────────────────────────────────────────────────────────────
+  # Stage pipeline: prepare → eliminating → exit
+  defecate:
+    behavior_name: defecate
+    description: >
+      Find a suitable elimination spot, perform elimination, then clean up and exit.
+    stages:
+      - stage_name: prepare
+        stage_type: prepare
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_SNIFF_AND_CIRCLE, weight: 1.0}
+          - {unit_id: ACT_SCRATCH_GROUND, weight: 0.8}
+          - {unit_id: ACT_HESITATE, weight: 0.6}
+          - {unit_id: ACT_LOWER_HEAD_OR_TURN, weight: 0.5}
+        conditions: {ground_surface_ok: true}
+        success_condition:
+          type: posture_reached
+          target_posture: squatting
+
+      - stage_name: eliminating
+        stage_type: eliminating
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_SQUAT_TO_PEE, weight: 0.8}
+          - {unit_id: ACT_SQUAT_TO_POOP, weight: 1.0}
+          - {unit_id: ACT_TENSE_BODY, weight: 0.9}
+          - {unit_id: ACT_SLIGHT_TREMOR, weight: 0.7}
+          - {unit_id: ACT_TAIL_MOVEMENT, weight: 0.6}
+        conditions: {elimination_ready: true}
+        success_condition:
+          type: elimination_completed
+
+      - stage_name: exit
+        stage_type: exit
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_STAND_UP_WITH_HIND_LEGS, weight: 1.0}
+          - {unit_id: ACT_SCRATCH_SOIL_OR_GROUND, weight: 0.8}
+          - {unit_id: ACT_SNIFF_EXCREMENT, weight: 0.6}
+          - {unit_id: ACT_WALK_AWAY_OR_SHAKE_HEAD, weight: 0.9}
+        conditions: {}
+        success_condition:
+          type: posture_reached
+          target_posture: standing
+
+  # ── cleanSelf ─────────────────────────────────────────────────────────────
+  # Stage pipeline: groom (single stage)
+  cleanSelf:
+    behavior_name: cleanSelf
+    description: >
+      Perform self-grooming: lick paws and fur, scratch ears, shake off debris.
+      Single contiguous grooming stage.
+    stages:
+      - stage_name: groom
+        stage_type: groom
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LICK_PAWS_OR_FUR, weight: 1.0}
+          - {unit_id: ACT_SCRATCH, weight: 0.9}
+          - {unit_id: ACT_SHAKE_OFF_WATER, weight: 0.5}
+          - {unit_id: ACT_STRETCH_LAZILY, weight: 0.4}
+          - {unit_id: ACT_ROLL_OVER, weight: 0.3}
+          - {unit_id: ACT_RUB_AGAINST_OBJECT, weight: 0.4}
+        conditions: {}
+        success_condition:
+          type: min_duration_elapsed
+          min_duration_sec: 3.0
+
+  # ── sleepNow ──────────────────────────────────────────────────────────────
+  # Stage pipeline (shallow): prepare → sleep_pose → sleeping(loop,0-3) → wakeup
+  # Stage pipeline (deep):    prepare → sleep_pose → sleeping(loop,0-2) → wakeup
+  # sleep_depth is a runtime param injected by the Planner.
+  sleepNow:
+    behavior_name: sleepNow
+    description: >
+      Transition into a sleep state. Supports two depth variants:
+        shallow — lighter sleep, shorter cycles, more dreaming activity
+        deep    — heavier sleep, longer cycles, minimal movement
+      Runtime param 'sleep_depth' selects the variant.
+    stages:
+      - stage_name: prepare
+        stage_type: prepare
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_CIRCLE_AROUND, weight: 1.0}
+          - {unit_id: ACT_SCRATCH_BED_OR_GROUND, weight: 0.8}
+          - {unit_id: ACT_LIE_ON_SIDE_AND_STRETCH, weight: 0.7}
+          - {unit_id: ACT_LICK_FUR_OR_PAWS, weight: 0.6}
+        conditions: {flat_surface: true}
+        success_condition:
+          type: posture_reached
+          target_posture: lying
+
+      - stage_name: sleep_pose
+        stage_type: sleep_pose
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_SLEEP_CURLED_UP, weight: 1.0}
+          - {unit_id: ACT_SLEEP_ON_STOMACH, weight: 0.9}
+          - {unit_id: ACT_SLEEP_ON_SIDE_CURLED_UP, weight: 0.8}
+          - {unit_id: ACT_SLEEP_ON_SIDE, weight: 0.7}
+          - {unit_id: ACT_SLEEP_ON_BACK, weight: 0.4}
+        conditions: {flat_surface: true}
+        success_condition:
+          type: posture_held
+          min_duration_sec: 2.0
+
+      - stage_name: sleeping
+        stage_type: sleeping
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        loop:
+          shallow: {min: 0, max: 3}
+          deep: {min: 0, max: 2}
+        candidates:
+          shallow:
+            - {unit_id: ACT_FLIP_BODY, weight: 0.5}
+            - {unit_id: ACT_WHINE_SOFTLY, weight: 0.4}
+            - {unit_id: ACT_TWITCH_OR_KICK_LEGS, weight: 0.6}
+            - {unit_id: ACT_SHAKE_HEAD_OR_SMACK_LIPS, weight: 0.5}
+            - {unit_id: ACT_WAG_TAIL, weight: 0.3}
+          deep:
+            - {unit_id: ACT_SLEEP_ON_SIDE, weight: 1.0}
+            - {unit_id: ACT_SLEEP_CURLED_UP, weight: 0.9}
+            - {unit_id: ACT_SLEEP_ON_BACK, weight: 0.5}
+            - {unit_id: ACT_SLEEP_ON_STOMACH, weight: 0.7}
+        conditions: {flat_surface: true}
+        success_condition:
+          type: sleep_cycle_completed
+          min_duration_sec: 5.0
+
+      - stage_name: wakeup
+        stage_type: wakeup
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_YAWN, weight: 1.0}
+          - {unit_id: ACT_GETUP_CRAWL, weight: 0.6}
+          - {unit_id: ACT_GETUP_ROLL, weight: 0.5}
+          - {unit_id: ACT_GETUP_BOUNCE, weight: 0.4}
+          - {unit_id: ACT_GETUP_STRETCH, weight: 0.8}
+          - {unit_id: ACT_GETUP_SIT, weight: 0.7}
+          - {unit_id: ACT_SHAKE_HEAD, weight: 0.5}
+        conditions: {}
+        success_condition:
+          type: posture_reached
+          target_posture: standing
+
+  # ── restInPlace ───────────────────────────────────────────────────────────
+  # Stage pipeline: recover (single stage)
+  restInPlace:
+    behavior_name: restInPlace
+    description: >
+      Rest and recover energy in place. Single stage selecting low-power
+      actions to conserve battery and cool down.
+    stages:
+      - stage_name: recover
+        stage_type: recover
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_PANT_IN_PLACE, weight: 0.7}
+          - {unit_id: ACT_SLOW_MOVEMENT, weight: 0.5}
+          - {unit_id: ACT_LIE_ON_SIDE_AND_STRETCH, weight: 0.6}
+          - {unit_id: ACT_YAWN, weight: 0.4}
+          - {unit_id: ACT_WAG_TAIL, weight: 0.3}
+          - {unit_id: ACT_LIE_BY_DOOR, weight: 0.3}
+        conditions: {}
+        success_condition:
+          type: min_duration_elapsed
+          min_duration_sec: 5.0
+
+  # ── recharge ──────────────────────────────────────────────────────────────
+  # Stage pipeline: recharge(condition_first:
+  #   charger_known → ACT_RETURN_TO_CHARGER,
+  #   charger_unavailable → ACT_BARK_AND_LIE_DOWN_IF_NO_CHARGER)
+  recharge:
+    behavior_name: recharge
+    description: >
+      Handle low-battery situation. If the charger location is known,
+      navigate back and dock. If not, bark for help and conserve power.
+      Uses condition_first policy to route to the appropriate action.
+    stages:
+      - stage_name: recharge
+        stage_type: recharge
+        selection_policy: condition_first
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - unit_id: ACT_RETURN_TO_CHARGER
+            weight: 1.0
+            conditions: {charger_location_known: true, battery_low: true}
+          - unit_id: ACT_BARK_AND_LIE_DOWN_IF_NO_CHARGER
+            weight: 1.0
+            conditions: {charger_location_unknown: true, battery_low: true}
+        conditions: {battery_low: true}
+        success_condition:
+          type: charging_or_resting
+          min_duration_sec: 10.0
+
+  # ╔════════════════════════════════════════════════════════════════════════════╗
+  # ║  SECTION 2: Animal social behaviors                                      ║
+  # ╚════════════════════════════════════════════════════════════════════════════╝
+
+  # ── testAnimalBoundary ────────────────────────────────────────────────────
+  # Stage pipeline: orient(fixed) → express → observe(opt,skipOnFail,fixed)
+  testAnimalBoundary:
+    behavior_name: testAnimalBoundary
+    description: >
+      Approach another animal cautiously: orient toward them, express a
+      social signal, then observe their response before committing further.
+    stages:
+      - stage_name: orient
+        stage_type: orient
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: true
+        candidates:
+          - {unit_id: TASK_ORIENT_TO_ANIMAL, weight: 1.0}
+          - {unit_id: ACT_STARE_AND_TILT_HEAD, weight: 0.8}
+          - {unit_id: ACT_APPROACH_SLOWLY_SIDEWAYS, weight: 0.7}
+        conditions: {other_animal_detected: true}
+        success_condition:
+          type: orientation_achieved
+          target_bearing_deg: 15
+
+      - stage_name: express
+        stage_type: express
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LOWER_HEAD_FLOP_EARS_WAG_TAIL, weight: 1.0}
+          - {unit_id: ACT_BARK_OR_HOWL, weight: 0.5}
+          - {unit_id: ACT_SNIFF_FACE_OR_EARS, weight: 0.6}
+          - {unit_id: ACT_SNIFF_BUTT_OR_TAIL, weight: 0.6}
+        conditions: {other_animal_nearby: true}
+        success_condition:
+          type: action_completed
+
+      - stage_name: observe
+        stage_type: observe
+        selection_policy: random_one
+        required: false
+        skip_on_fail: true
+        fixed: true
+        candidates:
+          - {unit_id: TASK_OBSERVE_ANIMAL_RESPONSE, weight: 1.0}
+          - {unit_id: ACT_STARE_AND_TILT_HEAD, weight: 0.7}
+        conditions: {other_animal_detected: true}
+        success_condition:
+          type: observation_completed
+          min_duration_sec: 2.0
+
+  # ── greetAnimal ───────────────────────────────────────────────────────────
+  # Stage pipeline: approach(fixed) → greet
+  greetAnimal:
+    behavior_name: greetAnimal
+    description: >
+      Approach another animal and perform standard canine greeting rituals:
+      sniffing, gentle nose touches, and friendly body language.
+    stages:
+      - stage_name: approach
+        stage_type: approach
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: true
+        candidates:
+          - {unit_id: TASK_APPROACH_ANIMAL_SAFELY, weight: 1.0}
+          - {unit_id: ACT_APPROACH_SLOWLY_SIDEWAYS, weight: 0.8}
+        conditions: {other_animal_detected: true, safe_to_approach: true}
+        success_condition:
+          type: distance_reached
+          max_distance_m: 0.3
+
+      - stage_name: greet
+        stage_type: greet
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_SNIFF_FACE_OR_EARS, weight: 1.0}
+          - {unit_id: ACT_SNIFF_BUTT_OR_TAIL, weight: 1.0}
+          - {unit_id: ACT_TOUCH_NOSE_OR_HEAD_GENTLY, weight: 0.9}
+          - {unit_id: ACT_LOWER_HEAD_FLOP_EARS_WAG_TAIL, weight: 0.8}
+          - {unit_id: ACT_LIE_BESIDE_OTHER_ANIMAL, weight: 0.5}
+        conditions: {other_animal_nearby: true}
+        success_condition:
+          type: action_completed
+
+  # ── inviteAnimalToPlay ────────────────────────────────────────────────────
+  # Stage pipeline: orient(fixed) → invite
+  inviteAnimalToPlay:
+    behavior_name: inviteAnimalToPlay
+    description: >
+      Orient toward another animal, then issue a play invitation using
+      bows, gentle paws, or playful vocalizations.
+    stages:
+      - stage_name: orient
+        stage_type: orient
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: true
+        candidates:
+          - {unit_id: TASK_ORIENT_TO_ANIMAL, weight: 1.0}
+          - {unit_id: ACT_APPROACH_SLOWLY_SIDEWAYS, weight: 0.6}
+        conditions: {other_animal_detected: true}
+        success_condition:
+          type: orientation_achieved
+          target_bearing_deg: 15
+
+      - stage_name: invite
+        stage_type: invite
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_PLAY_BOW, weight: 1.0}
+          - {unit_id: ACT_POUNCE_GENTLY, weight: 0.8}
+          - {unit_id: ACT_RUN_IN_CIRCLES_OR_CHASE, weight: 0.7}
+          - {unit_id: ACT_PAW_GENTLY_AT_OTHER, weight: 0.8}
+          - {unit_id: ACT_CARRY_AND_SHAKE_OBJECT, weight: 0.5}
+        conditions: {playmate_nearby: true}
+        success_condition:
+          type: action_completed
+
+  # ╔════════════════════════════════════════════════════════════════════════════╗
+  # ║  SECTION 3: Human interaction behaviors                                  ║
+  # ╚════════════════════════════════════════════════════════════════════════════╝
+
+  # ── requestResourceFromHuman ──────────────────────────────────────────────
+  # Stage pipeline: request (single stage)
+  requestResourceFromHuman:
+    behavior_name: requestResourceFromHuman
+    description: >
+      Request a resource (food, water, toy, walk) from a human using a
+      repertoire of attention-seeking and demand behaviors.
+    stages:
+      - stage_name: request
+        stage_type: request
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_STARE_AT_FOOD_IN_HAND, weight: 1.0}
+          - {unit_id: ACT_SCRATCH_FOOD_BOWL_OR_SNACK_CABINET, weight: 0.8}
+          - {unit_id: ACT_CARRY_LEASH_OR_SHOE, weight: 0.7}
+          - {unit_id: ACT_PRESS_BELL_OR_TRIGGER_MECHANISM, weight: 0.6}
+          - {unit_id: ACT_WHINE_OR_BARK_SOFTLY, weight: 0.7}
+          - {unit_id: ACT_PAW_AT_ARM_OR_PANTS, weight: 0.8}
+          - {unit_id: ACT_NUDGE_HAND_WITH_HEAD, weight: 0.7}
+          - {unit_id: ACT_GUARD_FOOD_BOWL_OR_SNACK_CABINET, weight: 0.4}
+        conditions: {human_visible: true}
+        success_condition:
+          type: action_completed
+
+  # ── seekHumanInteraction ──────────────────────────────────────────────────
+  # Stage pipeline: search(opt,condition_first) → approach(opt,condition_first) → interact
+  seekHumanInteraction:
+    behavior_name: seekHumanInteraction
+    description: >
+      Seek out a human for social interaction. If a human is not visible,
+      search for them. Once found, approach and engage with affectionate or
+      playful behaviors.
+    stages:
+      - stage_name: search
+        stage_type: search
+        selection_policy: condition_first
+        required: false
+        skip_on_fail: true
+        fixed: false
+        candidates:
+          - unit_id: ACT_SEARCH_FOR_PERSON
+            weight: 1.0
+            conditions: {person_visible: false, person_to_find: true}
+          - unit_id: ACT_FOLLOW_AND_CLING
+            weight: 0.6
+            conditions: {person_visible: true}
+        conditions: {}
+        success_condition:
+          type: person_found
+
+      - stage_name: approach
+        stage_type: approach
+        selection_policy: condition_first
+        required: false
+        skip_on_fail: true
+        fixed: false
+        candidates:
+          - unit_id: TASK_APPROACH_PERSON
+            weight: 1.0
+            conditions: {person_detected: true, distance_to_person_gt: 0.5}
+          - unit_id: ACT_RUB_AGAINST_LEG_OR_LEAN
+            weight: 0.7
+            conditions: {person_nearby: true}
+        conditions: {}
+        success_condition:
+          type: distance_reached
+          max_distance_m: 0.3
+
+      - stage_name: interact
+        stage_type: interact
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_NUDGE_HAND_WITH_HEAD, weight: 1.0}
+          - {unit_id: ACT_SIT_OR_LIE_AT_FEET, weight: 0.9}
+          - {unit_id: ACT_LICK_HAND_OR_FACE, weight: 0.8}
+          - {unit_id: ACT_RUB_AGAINST_LEG_OR_LEAN, weight: 0.8}
+          - {unit_id: ACT_WHINE_OR_BARK_SOFTLY, weight: 0.6}
+          - {unit_id: ACT_PAW_AT_ARM_OR_PANTS, weight: 0.7}
+          - {unit_id: ACT_JUMP_ON_PERSON, weight: 0.4}
+          - {unit_id: ACT_FOLLOW_AND_CLING, weight: 0.5}
+        conditions: {person_nearby: true}
+        success_condition:
+          type: action_completed
+
+  # ── inviteHumanToPlay ─────────────────────────────────────────────────────
+  # Stage pipeline: approach(opt,fixed) → invite
+  inviteHumanToPlay:
+    behavior_name: inviteHumanToPlay
+    description: >
+      Invite a human to play. Optionally approach first if not already
+      near, then issue a clear play invitation using bows, toy offerings,
+      or playful gestures.
+    stages:
+      - stage_name: approach
+        stage_type: approach
+        selection_policy: random_one
+        required: false
+        skip_on_fail: true
+        fixed: true
+        candidates:
+          - {unit_id: TASK_APPROACH_PERSON, weight: 1.0}
+          - {unit_id: ACT_FOLLOW_AND_CLING, weight: 0.5}
+        conditions: {person_detected: true, distance_to_person_gt: 0.5}
+        success_condition:
+          type: distance_reached
+          max_distance_m: 0.5
+
+      - stage_name: invite
+        stage_type: invite
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_PLAY_BOW_INVITE, weight: 1.0}
+          - {unit_id: ACT_DROP_TOY_IN_FRONT_OF_OWNER, weight: 0.8}
+          - {unit_id: ACT_SHAKE_TOY_WITH_MOUTH, weight: 0.6}
+          - {unit_id: ACT_RUN_IN_CIRCLES_OR_ZOOMIES, weight: 0.5}
+          - {unit_id: ACT_NIP_GENTLY_AT_PANTS_OR_HAND, weight: 0.4}
+          - {unit_id: ACT_PLACE_PAW_ON_KNEE, weight: 0.7}
+          - {unit_id: ACT_PAW_AT_ARM_OR_PANTS, weight: 0.6}
+        conditions: {playmate_nearby: true}
+        success_condition:
+          type: action_completed
+
+  # ╔════════════════════════════════════════════════════════════════════════════╗
+  # ║  SECTION 4: Exploration behaviors                                        ║
+  # ╚════════════════════════════════════════════════════════════════════════════╝
+
+  # ── exploreRoom ───────────────────────────────────────────────────────────
+  # Stage pipeline: explore (single stage)
+  exploreRoom:
+    behavior_name: exploreRoom
+    description: >
+      Explore the room by walking around, sniffing the ground and objects,
+      and scanning the environment with head and ear movements.
+    stages:
+      - stage_name: explore
+        stage_type: explore
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_TROT_AND_LOOK_AROUND, weight: 1.0}
+          - {unit_id: ACT_WALK_SLOWLY_AND_SNIFF_GROUND, weight: 1.0}
+          - {unit_id: ACT_CRAWL_THROUGH_LOW_GAP, weight: 0.3}
+          - {unit_id: ACT_STAND_AND_SCRATCH_HIGH, weight: 0.4}
+          - {unit_id: ACT_SCRATCH_DOOR_OR_FENCE, weight: 0.4}
+          - {unit_id: ACT_FIND_COOL_SPOT_AND_LIE_DOWN, weight: 0.4}
+          - {unit_id: ACT_PANT_IN_PLACE, weight: 0.3}
+          - {unit_id: ACT_SLOW_MOVEMENT, weight: 0.5}
+        conditions: {}
+        success_condition:
+          type: min_duration_elapsed
+          min_duration_sec: 5.0
+
+  # ── inspectObject ─────────────────────────────────────────────────────────
+  # Stage pipeline: approach(opt,fixed) → inspect
+  inspectObject:
+    behavior_name: inspectObject
+    description: >
+      Inspect a novel object. Optionally approach it first if not already
+      close, then investigate using sniffing, pawing, mouthing, and other
+      exploratory actions.
+    stages:
+      - stage_name: approach
+        stage_type: approach
+        selection_policy: random_one
+        required: false
+        skip_on_fail: true
+        fixed: true
+        candidates:
+          - {unit_id: TASK_APPROACH_OBJECT, weight: 1.0}
+        conditions: {object_detected: true, distance_to_object_gt: 0.3}
+        success_condition:
+          type: distance_reached
+          max_distance_m: 0.3
+
+      - stage_name: inspect
+        stage_type: inspect
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_SNIFF_OBJECT, weight: 1.0}
+          - {unit_id: ACT_PUSH_OBJECT_WITH_PAW, weight: 0.8}
+          - {unit_id: ACT_SCRATCH_OBJECT_GENTLY, weight: 0.7}
+          - {unit_id: ACT_TOUCH_OR_CARRY_OBJECT_WITH_MOUTH, weight: 0.7}
+          - {unit_id: ACT_BARK_AT_OBJECT, weight: 0.4}
+          - {unit_id: ACT_NIBBLE_OBJECT, weight: 0.6}
+          - {unit_id: ACT_KNOCK_OVER_OBJECT, weight: 0.3}
+          - {unit_id: ACT_CARRY_AND_DROP_OBJECT_AGAIN, weight: 0.5}
+          - {unit_id: ACT_CARRY_AND_HIDE_OBJECT, weight: 0.4}
+        conditions: {object_nearby: true}
+        success_condition:
+          type: action_completed
+
+  # ── inspectKnownObject ────────────────────────────────────────────────────
+  # Stage pipeline: inspect (pool determined by object_category param)
+  inspectKnownObject:
+    behavior_name: inspectKnownObject
+    description: >
+      Inspect an object of a known category. The candidate pool is selected
+      at runtime based on the 'object_category' parameter, which narrows the
+      inspection actions to those relevant to the specific object type.
+      Supported categories: slippers_socks, trash_can, delivery_box, tissue,
+      door, food_bowl, toy, generic.
+    stages:
+      - stage_name: inspect
+        stage_type: inspect
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          # ── slippers_socks ──────────────────────────────────────────────
+          slippers_socks:
+            - {unit_id: ACT_SNIFF_SLIPPERS_OR_SOCKS, weight: 1.0}
+            - {unit_id: ACT_BITE_SLIPPERS_OR_SOCKS, weight: 0.6}
+            - {unit_id: ACT_POUNCE_ON_SLIPPERS_OR_SOCKS, weight: 0.5}
+            - {unit_id: ACT_CARRY_SLIPPERS_OR_SOCKS_TO_PERSON, weight: 0.4}
+            - {unit_id: ACT_SCRATCH_SLIPPERS_OR_SOCKS_WITH_PAW, weight: 0.6}
+            - {unit_id: ACT_IGNORE_SLIPPERS_OR_SOCKS, weight: 0.3}
+          # ── trash_can ───────────────────────────────────────────────────
+          trash_can:
+            - {unit_id: ACT_SNIFF_TRASH_CAN, weight: 1.0}
+            - {unit_id: ACT_RUMMAGE_THROUGH_TRASH_CAN, weight: 0.5}
+            - {unit_id: ACT_IGNORE_TRASH_CAN, weight: 0.4}
+          # ── delivery_box ────────────────────────────────────────────────
+          delivery_box:
+            - {unit_id: ACT_SNIFF_DELIVERY_BOX, weight: 1.0}
+            - {unit_id: ACT_BITE_DELIVERY_BOX, weight: 0.6}
+            - {unit_id: ACT_SCRATCH_DELIVERY_BOX_WITH_PAW, weight: 0.7}
+            - {unit_id: ACT_CARRY_DELIVERY_BOX_TO_PERSON, weight: 0.4}
+            - {unit_id: ACT_IGNORE_DELIVERY_BOX, weight: 0.3}
+          # ── tissue ──────────────────────────────────────────────────────
+          tissue:
+            - {unit_id: ACT_SNIFF_TISSUE, weight: 1.0}
+            - {unit_id: ACT_SCRATCH_TISSUE_WITH_PAW, weight: 0.7}
+            - {unit_id: ACT_CARRY_TISSUE_TO_PERSON, weight: 0.4}
+            - {unit_id: ACT_IGNORE_TISSUE, weight: 0.3}
+          # ── door ────────────────────────────────────────────────────────
+          door:
+            - {unit_id: ACT_SNIFF_AROUND_DOOR, weight: 1.0}
+            - {unit_id: ACT_LEAN_AGAINST_DOOR, weight: 0.7}
+            - {unit_id: ACT_LIE_BY_DOOR, weight: 0.6}
+            - {unit_id: ACT_SCRATCH_DOOR, weight: 0.5}
+            - {unit_id: ACT_IGNORE_DOOR, weight: 0.3}
+          # ── food_bowl ───────────────────────────────────────────────────
+          food_bowl:
+            - {unit_id: ACT_SNIFF_BOWL_EDGE, weight: 1.0}
+            - {unit_id: ACT_PAW_AT_BOWL, weight: 0.8}
+            - {unit_id: ACT_SIT_OR_LIE_BY_BOWL, weight: 0.6}
+            - {unit_id: ACT_SCRATCH_FOOD_BOWL_OR_SNACK_CABINET, weight: 0.5}
+            - {unit_id: ACT_GUARD_FOOD_BOWL_OR_SNACK_CABINET, weight: 0.4}
+          # ── toy ─────────────────────────────────────────────────────────
+          toy:
+            - {unit_id: ACT_SNIFF_OBJECT, weight: 1.0}
+            - {unit_id: ACT_TOUCH_OR_CARRY_OBJECT_WITH_MOUTH, weight: 0.8}
+            - {unit_id: ACT_CARRY_AND_SHAKE_OBJECT, weight: 0.7}
+            - {unit_id: ACT_CARRY_AND_DROP_OBJECT_AGAIN, weight: 0.6}
+            - {unit_id: ACT_CARRY_AND_HIDE_OBJECT, weight: 0.5}
+            - {unit_id: ACT_PUSH_OBJECT_WITH_PAW, weight: 0.6}
+          # ── generic (fallback) ──────────────────────────────────────────
+          generic:
+            - {unit_id: ACT_SNIFF_OBJECT, weight: 1.0}
+            - {unit_id: ACT_PUSH_OBJECT_WITH_PAW, weight: 0.8}
+            - {unit_id: ACT_SCRATCH_OBJECT_GENTLY, weight: 0.7}
+            - {unit_id: ACT_TOUCH_OR_CARRY_OBJECT_WITH_MOUTH, weight: 0.7}
+            - {unit_id: ACT_NIBBLE_OBJECT, weight: 0.6}
+            - {unit_id: ACT_BARK_AT_OBJECT, weight: 0.4}
+        conditions: {object_nearby: true}
+        success_condition:
+          type: action_completed
+
+  # ╔════════════════════════════════════════════════════════════════════════════╗
+  # ║  SECTION 5: Emotion expression behaviors                                 ║
+  # ║  Each behavior has a single "express" stage with selection_policy:       ║
+  # ║  random_one. Actual candidates are loaded from emotion_action_pools.yaml ║
+  # ║  at runtime, keyed by emotion + level + interaction_mode params.         ║
+  # ╚════════════════════════════════════════════════════════════════════════════╝
+
+  # ── expressCalm ───────────────────────────────────────────────────────────
+  expressCalm:
+    behavior_name: expressCalm
+    description: >
+      Express a calm emotional state. Candidates are drawn from the
+      expressCalm pool in emotion_action_pools.yaml, filtered by the
+      runtime 'level' (LOW/HIGH) and 'interaction_mode' (solo/interactive)
+      parameters.
+    stages:
+      - stage_name: express
+        stage_type: express
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          # Pool reference — resolved at runtime from emotion_action_pools.yaml
+          # Key: expressCalm + level + interaction_mode
+          pool: expressCalm
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── expressJoy ────────────────────────────────────────────────────────────
+  expressJoy:
+    behavior_name: expressJoy
+    description: >
+      Express a joyful emotional state. Candidates are drawn from the
+      expressJoy pool in emotion_action_pools.yaml, filtered by the
+      runtime 'level' (LOW/MID/HIGH) and 'interaction_mode' (solo/interactive)
+      parameters.
+    stages:
+      - stage_name: express
+        stage_type: express
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          pool: expressJoy
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── expressExcitement ─────────────────────────────────────────────────────
+  expressExcitement:
+    behavior_name: expressExcitement
+    description: >
+      Express an excited emotional state. Candidates are drawn from the
+      expressExcitement pool in emotion_action_pools.yaml, filtered by the
+      runtime 'level' (LOW/HIGH) and 'interaction_mode' (solo/interactive)
+      parameters.
+    stages:
+      - stage_name: express
+        stage_type: express
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          pool: expressExcitement
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── expressAnxiety ────────────────────────────────────────────────────────
+  expressAnxiety:
+    behavior_name: expressAnxiety
+    description: >
+      Express an anxious emotional state. Candidates are drawn from the
+      expressAnxiety pool in emotion_action_pools.yaml, filtered by the
+      runtime 'level' (LOW/HIGH) and 'interaction_mode' (solo/interactive)
+      parameters.
+    stages:
+      - stage_name: express
+        stage_type: express
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          pool: expressAnxiety
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── expressFear ───────────────────────────────────────────────────────────
+  expressFear:
+    behavior_name: expressFear
+    description: >
+      Express a fearful emotional state. Candidates are drawn from the
+      expressFear pool in emotion_action_pools.yaml, filtered by the
+      runtime 'level' (LOW/HIGH) and 'interaction_mode' (solo/interactive)
+      parameters.
+    stages:
+      - stage_name: express
+        stage_type: express
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          pool: expressFear
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── expressCuriosity ──────────────────────────────────────────────────────
+  expressCuriosity:
+    behavior_name: expressCuriosity
+    description: >
+      Express a curious emotional state. Candidates are drawn from the
+      expressCuriosity pool in emotion_action_pools.yaml, filtered by the
+      runtime 'level' (LOW/HIGH) and 'interaction_mode' (solo/interactive)
+      parameters.
+    stages:
+      - stage_name: express
+        stage_type: express
+        selection_policy: random_one
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          pool: expressCuriosity
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Runtime parameter reference
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# The following runtime parameters are injected by the Planner or passed
+# via the BehaviorGoal and influence stage/action selection:
+#
+#   sleep_depth          — "shallow" or "deep" (sleepNow)
+#   level                — "LOW" | "MID" | "HIGH" (emotion expression behaviors)
+#   interaction_mode     — "solo" or "interactive" (emotion expression behaviors)
+#   object_category      — "slippers_socks" | "trash_can" | "delivery_box" |
+#                          "tissue" | "door" | "food_bowl" | "toy" | "generic"
+#                          (inspectKnownObject)
+#
+# Selection policies:
+#   random_one           — pick one candidate uniformly at random
+#   random               — pick one candidate uniformly at random (alias)
+#   first                — always pick the first candidate
+#   weighted             — pick one candidate using weight values
+#   condition_first      — evaluate conditions in order; select the first
+#                           candidate whose conditions are satisfied
+#
+# Stage modifiers:
+#   fixed                — stage is mandatory and non-skippable
+#   required             — stage must succeed for behavior success
+#   skip_on_fail         — if stage fails, skip it and continue pipeline
+#   loop                 — repeat stage up to {max} times (min..max range)
+#   opt                  — stage is optional (required: false)
+#
+# Success condition types:
+#   action_completed                  — action finished normally
+#   posture_reached                   — dog reached target posture
+#   distance_reached                  — dog reached target distance
+#   orientation_achieved              — dog facing within bearing tolerance
+#   duration_elapsed_or_food_consumed — ate for min time or food gone
+#   elimination_completed             — full elimination cycle done
+#   min_duration_elapsed              — minimum wall-clock time passed
+#   posture_held                      — posture maintained for min time
+#   sleep_cycle_completed             — one sleep cycle elapsed
+#   charging_or_resting               — docked or lying down conserving
+#   person_found                      — search found a visible person
+#   observation_completed             — observed target for min time
+
+  # ╔════════════════════════════════════════════════════════════════════════════╗
+  # ║  SECTION 6: Legacy migrated behaviors (auto-generated from old catalog)  ║
+  # ╚════════════════════════════════════════════════════════════════════════════╝
+
+  # ── alertAndApproach (migrated, 3 stages) ─────────────────────────────
+  alertAndApproach:
+    behavior_name: alertAndApproach
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: alert head up
+        stage_type: alert_head_up
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_HEAD_ALERT, weight: 1.0}
+          - {unit_id: ACT_POSTURE_ALERT_STAND, weight: 1.0}
+          - {unit_id: ACT_EAR_PERK_UP, weight: 1.0}
+          - {unit_id: ACT_LOCO_SCAN, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: cautious approach
+        stage_type: cautious_approach
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LOCO_APPROACH_SLOW, weight: 1.0}
+          - {unit_id: ACT_LOCO_WALK_SLOW, weight: 1.0}
+          - {unit_id: ACT_HEAD_TILT, weight: 1.0}
+          - {unit_id: ACT_EAR_PERK_UP, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: stop and observe
+        stage_type: stop_and_observe
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LOCO_STOP, weight: 1.0}
+          - {unit_id: ACT_POSTURE_ALERT_STAND, weight: 1.0}
+          - {unit_id: ACT_HEAD_ALERT, weight: 1.0}
+          - {unit_id: ACT_EAR_SWIVEL, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── approachUser (migrated, 3 stages) ─────────────────────────────
+  approachUser:
+    behavior_name: approachUser
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: orient to user
+        stage_type: orient_to_user
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_HEAD_GAZE_OWNER, weight: 1.0}
+          - {unit_id: ACT_EAR_PERK_UP, weight: 1.0}
+          - {unit_id: ACT_POSTURE_ALERT_STAND, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: approach user
+        stage_type: approach_user
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LOCO_APPROACH_SLOW, weight: 1.0}
+          - {unit_id: ACT_LOCO_WALK_SLOW, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_SLOW, weight: 1.0}
+          - {unit_id: ACT_HEAD_GAZE_OWNER, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: stop near user
+        stage_type: stop_near_user
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LOCO_STOP, weight: 1.0}
+          - {unit_id: ACT_POSTURE_ALERT_STAND, weight: 1.0}
+          - {unit_id: ACT_HEAD_TILT, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_SLOW, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── barkShortAlert (migrated, 1 stages) ─────────────────────────────
+  barkShortAlert:
+    behavior_name: barkShortAlert
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: alert bark
+        stage_type: alert_bark
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_HEAD_ALERT, weight: 1.0}
+          - {unit_id: ACT_VOCAL_BARK_PLAYFUL, weight: 1.0}
+          - {unit_id: ACT_EAR_PERK_UP, weight: 1.0}
+          - {unit_id: ACT_POSTURE_ALERT_STAND, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── carryAndShake (migrated, 1 stages) ─────────────────────────────
+  carryAndShake:
+    behavior_name: carryAndShake
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: carry and shake
+        stage_type: carry_and_shake
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_MOUTH_CARRY_SHAKE, weight: 1.0}
+          - {unit_id: ACT_HEAD_SHAKE_TOY, weight: 1.0}
+          - {unit_id: ACT_LOCO_HOP_IN_PLACE, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_FAST, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── comeHere (migrated, 4 stages) ─────────────────────────────
+  comeHere:
+    behavior_name: comeHere
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: orient to owner
+        stage_type: orient_to_owner
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_HEAD_GAZE_OWNER, weight: 1.0}
+          - {unit_id: ACT_EAR_PERK_UP, weight: 1.0}
+          - {unit_id: ACT_HEAD_LOOK_AROUND, weight: 1.0}
+          - {unit_id: ACT_POSTURE_ALERT_STAND, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: approach owner
+        stage_type: approach_owner
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LOCO_APPROACH_SLOW, weight: 1.0}
+          - {unit_id: ACT_LOCO_TROT_TOWARDS, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_FAST, weight: 1.0}
+          - {unit_id: ACT_HEAD_GAZE_OWNER, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: stop at safe distance
+        stage_type: stop_at_safe_distanc
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_POSTURE_STOP, weight: 1.0}
+          - {unit_id: ACT_LOCO_STOP, weight: 1.0}
+          - {unit_id: ACT_POSTURE_ALERT_STAND, weight: 1.0}
+          - {unit_id: ACT_LOCO_STOP_IMMEDIATE, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: greet
+        stage_type: greet
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_HEAD_TILT, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_FAST, weight: 1.0}
+          - {unit_id: ACT_HEAD_NUDGE, weight: 1.0}
+          - {unit_id: ACT_VOCAL_BARK_HAPPY, weight: 1.0}
+          - {unit_id: ACT_EAR_RELAX, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── eatImmediately (migrated, 2 stages) ─────────────────────────────
+  eatImmediately:
+    behavior_name: eatImmediately
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: rush to bowl
+        stage_type: rush_to_bowl
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LOCO_TROT_TOWARDS, weight: 1.0}
+          - {unit_id: ACT_LOCO_APPROACH_SLOW, weight: 1.0}
+          - {unit_id: ACT_HEAD_SNIFF_FOOD, weight: 1.0}
+          - {unit_id: ACT_NAV_TO_TARGET, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: eat now
+        stage_type: eat_now
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_HEAD_LOWER_TO_BOWL, weight: 1.0}
+          - {unit_id: ACT_MOUTH_CHEW, weight: 1.0}
+          - {unit_id: ACT_MOUTH_BITE_AND_SWALLOW, weight: 1.0}
+          - {unit_id: ACT_MOUTH_LAP_WATER, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── emergencyStop (migrated, 1 stages) ─────────────────────────────
+  emergencyStop:
+    behavior_name: emergencyStop
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: immediate halt
+        stage_type: immediate_halt
+        selection_policy: first
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_POSTURE_FREEZE, weight: 1.0}
+          - {unit_id: ACT_POSTURE_STOP, weight: 1.0}
+          - {unit_id: ACT_LOCO_STOP, weight: 1.0}
+          - {unit_id: ACT_LOCO_STOP_IMMEDIATE, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── followUser (migrated, 2 stages) ─────────────────────────────
+  followUser:
+    behavior_name: followUser
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: lock on target
+        stage_type: lock_on_target
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_HEAD_GAZE_OWNER, weight: 1.0}
+          - {unit_id: ACT_EAR_PERK_UP, weight: 1.0}
+          - {unit_id: ACT_POSTURE_ALERT_STAND, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: follow at distance
+        stage_type: follow_at_distance
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LOCO_FOLLOW, weight: 1.0}
+          - {unit_id: ACT_LOCO_WALK_SLOW, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_SLOW, weight: 1.0}
+          - {unit_id: ACT_HEAD_GAZE_OWNER, weight: 1.0}
+          - {unit_id: ACT_LOCO_PACE, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── handShake (migrated, 3 stages) ─────────────────────────────
+  handShake:
+    behavior_name: handShake
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: stand steady
+        stage_type: stand_steady
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_POSTURE_RELAXED_STAND, weight: 1.0}
+          - {unit_id: ACT_POSTURE_ALERT_STAND, weight: 1.0}
+          - {unit_id: ACT_HEAD_GAZE_OWNER, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: offer paw
+        stage_type: offer_paw
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_PAW_LIFT, weight: 1.0}
+          - {unit_id: ACT_HEAD_GAZE_OWNER, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_FAST, weight: 1.0}
+          - {unit_id: ACT_HEAD_LEAN_INTO_TOUCH, weight: 1.0}
+          - {unit_id: ACT_EAR_FLATTEN_HAPPY, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: withdraw paw
+        stage_type: withdraw_paw
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_PAW_WITHDRAW, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_SLOW, weight: 1.0}
+          - {unit_id: ACT_EAR_RELAX, weight: 1.0}
+          - {unit_id: ACT_HEAD_GAZE_OWNER, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── highFive (migrated, 3 stages) ─────────────────────────────
+  highFive:
+    behavior_name: highFive
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: focus on owner
+        stage_type: focus_on_owner
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_HEAD_GAZE_OWNER, weight: 1.0}
+          - {unit_id: ACT_EAR_PERK_UP, weight: 1.0}
+          - {unit_id: ACT_POSTURE_ALERT_STAND, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: raise paw high
+        stage_type: raise_paw_high
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_PAW_HOLD_HIGH, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_FAST, weight: 1.0}
+          - {unit_id: ACT_VOCAL_BARK_HAPPY, weight: 1.0}
+          - {unit_id: ACT_HEAD_GAZE_OWNER, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: recover
+        stage_type: recover
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_PAW_WITHDRAW, weight: 1.0}
+          - {unit_id: ACT_POSTURE_RELAXED_STAND, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_FAST, weight: 1.0}
+          - {unit_id: ACT_EAR_PERK_UP, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── inspectToy (migrated, 3 stages) ─────────────────────────────
+  inspectToy:
+    behavior_name: inspectToy
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: spot toy
+        stage_type: spot_toy
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_HEAD_LOOK_AROUND, weight: 1.0}
+          - {unit_id: ACT_EAR_PERK_UP, weight: 1.0}
+          - {unit_id: ACT_LOCO_SCAN, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: approach toy
+        stage_type: approach_toy
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LOCO_APPROACH_SLOW, weight: 1.0}
+          - {unit_id: ACT_HEAD_SNIFF_OBJECT, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: sniff and paw
+        stage_type: sniff_and_paw
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_HEAD_SNIFF_OBJECT, weight: 1.0}
+          - {unit_id: ACT_PAW_AT_OBJECT, weight: 1.0}
+          - {unit_id: ACT_HEAD_TILT, weight: 1.0}
+          - {unit_id: ACT_MOUTH_GRAB, weight: 1.0}
+          - {unit_id: ACT_MOUTH_CARRY_SHAKE, weight: 1.0}
+          - {unit_id: ACT_HEAD_SHAKE_TOY, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── jumpOnPerson (migrated, 1 stages) ─────────────────────────────
+  jumpOnPerson:
+    behavior_name: jumpOnPerson
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: jump on person
+        stage_type: jump_on_person
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LOCO_JUMP_ON_PERSON, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_FAST, weight: 1.0}
+          - {unit_id: ACT_VOCAL_BARK_HAPPY, weight: 1.0}
+          - {unit_id: ACT_PAW_REACH_UP, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── lickPaws (migrated, 2 stages) ─────────────────────────────
+  lickPaws:
+    behavior_name: lickPaws
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: settle down
+        stage_type: settle_down
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_POSTURE_LIE_FLAT, weight: 1.0}
+          - {unit_id: ACT_POSTURE_CURL_UP, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: lick paws
+        stage_type: lick_paws
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_HEAD_LICK_PAW, weight: 1.0}
+          - {unit_id: ACT_MOUTH_NIBBLE_FUR, weight: 1.0}
+          - {unit_id: ACT_PAW_WIPE_FACE, weight: 1.0}
+          - {unit_id: ACT_EAR_RELAX, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── playDead (migrated, 3 stages) ─────────────────────────────
+  playDead:
+    behavior_name: playDead
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: lie down
+        stage_type: lie_down
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_POSTURE_LIE_FLAT, weight: 1.0}
+          - {unit_id: ACT_POSTURE_CROUCH, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: play dead pose
+        stage_type: play_dead_pose
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_POSTURE_PLAY_DEAD, weight: 1.0}
+          - {unit_id: ACT_POSTURE_LIE_SIDE, weight: 1.0}
+          - {unit_id: ACT_POSTURE_SPLAY_LEGS, weight: 1.0}
+          - {unit_id: ACT_POSTURE_GENTLE_BREATHING, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: hold still
+        stage_type: hold_still
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_POSTURE_PLAY_DEAD, weight: 1.0}
+          - {unit_id: ACT_POSTURE_LIE_SIDE, weight: 1.0}
+          - {unit_id: ACT_POSTURE_LIE_FLAT, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── pounceForward (migrated, 1 stages) ─────────────────────────────
+  pounceForward:
+    behavior_name: pounceForward
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: pouncing
+        stage_type: pouncing
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LOCO_POUNCE, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_FAST, weight: 1.0}
+          - {unit_id: ACT_VOCAL_BARK_PLAYFUL, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── retrieveToy (migrated, 4 stages) ─────────────────────────────
+  retrieveToy:
+    behavior_name: retrieveToy
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: search for toy
+        stage_type: search_for_toy
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_HEAD_LOOK_AROUND, weight: 1.0}
+          - {unit_id: ACT_HEAD_SNIFF_GROUND, weight: 1.0}
+          - {unit_id: ACT_LOCO_WALK_SLOW, weight: 1.0}
+          - {unit_id: ACT_LOCO_SCAN, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: approach toy
+        stage_type: approach_toy
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LOCO_APPROACH_SLOW, weight: 1.0}
+          - {unit_id: ACT_HEAD_SNIFF_OBJECT, weight: 1.0}
+          - {unit_id: ACT_PAW_AT_OBJECT, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: grab toy
+        stage_type: grab_toy
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_MOUTH_GRAB, weight: 1.0}
+          - {unit_id: ACT_MOUTH_CARRY_SHAKE, weight: 1.0}
+          - {unit_id: ACT_HEAD_SHAKE_TOY, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_FAST, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: return to owner
+        stage_type: return_to_owner
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LOCO_APPROACH_SLOW, weight: 1.0}
+          - {unit_id: ACT_LOCO_TROT_TOWARDS, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_FAST, weight: 1.0}
+          - {unit_id: ACT_HEAD_GAZE_OWNER, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── rollOver (migrated, 3 stages) ─────────────────────────────
+  rollOver:
+    behavior_name: rollOver
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: lie down prep
+        stage_type: lie_down_prep
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_POSTURE_LIE_FLAT, weight: 1.0}
+          - {unit_id: ACT_POSTURE_CROUCH, weight: 1.0}
+          - {unit_id: ACT_TAIL_TUCK, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: roll
+        stage_type: roll
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_POSTURE_ROLL_OVER, weight: 1.0}
+          - {unit_id: ACT_POSTURE_LIE_SIDE, weight: 1.0}
+          - {unit_id: ACT_POSTURE_SPLAY_LEGS, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: stand up
+        stage_type: stand_up
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_POSTURE_STAND_UP, weight: 1.0}
+          - {unit_id: ACT_POSTURE_SHAKE_BODY, weight: 1.0}
+          - {unit_id: ACT_LOCO_SHAKE_BODY, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── rollOverShowBelly (migrated, 1 stages) ─────────────────────────────
+  rollOverShowBelly:
+    behavior_name: rollOverShowBelly
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: roll and show belly
+        stage_type: roll_and_show_belly
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_POSTURE_ROLL_OVER, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_SLOW, weight: 1.0}
+          - {unit_id: ACT_VOCAL_WHINE_SOFT, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── seekFood (migrated, 3 stages) ─────────────────────────────
+  seekFood:
+    behavior_name: seekFood
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: search for bowl
+        stage_type: search_for_bowl
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_HEAD_SNIFF_GROUND, weight: 1.0}
+          - {unit_id: ACT_LOCO_WALK_SLOW, weight: 1.0}
+          - {unit_id: ACT_HEAD_LOOK_AROUND, weight: 1.0}
+          - {unit_id: ACT_HEAD_SNIFF_FOOD, weight: 1.0}
+          - {unit_id: ACT_NAV_TO_TARGET, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: move to bowl
+        stage_type: move_to_bowl
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LOCO_APPROACH_SLOW, weight: 1.0}
+          - {unit_id: ACT_LOCO_WALK_SLOW, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_SLOW, weight: 1.0}
+          - {unit_id: ACT_NAV_TO_TARGET, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: head down and eat
+        stage_type: head_down_and_eat
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_HEAD_LOWER_TO_BOWL, weight: 1.0}
+          - {unit_id: ACT_MOUTH_CHEW, weight: 1.0}
+          - {unit_id: ACT_MOUTH_BITE_AND_SWALLOW, weight: 1.0}
+          - {unit_id: ACT_HEAD_SNIFF_FOOD, weight: 1.0}
+          - {unit_id: ACT_MOUTH_LAP_WATER, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── seekInteraction (migrated, 3 stages) ─────────────────────────────
+  seekInteraction:
+    behavior_name: seekInteraction
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: look for people
+        stage_type: look_for_people
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_HEAD_LOOK_AROUND, weight: 1.0}
+          - {unit_id: ACT_LOCO_WALK_SLOW, weight: 1.0}
+          - {unit_id: ACT_EAR_PERK_UP, weight: 1.0}
+          - {unit_id: ACT_LOCO_SCAN, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: approach person
+        stage_type: approach_person
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LOCO_APPROACH_SLOW, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_SLOW, weight: 1.0}
+          - {unit_id: ACT_HEAD_TILT, weight: 1.0}
+          - {unit_id: ACT_HEAD_NUDGE, weight: 1.0}
+          - {unit_id: ACT_HEAD_GAZE_OWNER, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: engage
+        stage_type: engage
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_HEAD_TILT, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_FAST, weight: 1.0}
+          - {unit_id: ACT_EAR_RELAX, weight: 1.0}
+          - {unit_id: ACT_HEAD_NUDGE, weight: 1.0}
+          - {unit_id: ACT_VOCAL_WHINE_SOFT, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── seekSafety (migrated, 3 stages) ─────────────────────────────
+  seekSafety:
+    behavior_name: seekSafety
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: alert scan
+        stage_type: alert_scan
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_POSTURE_FREEZE, weight: 1.0}
+          - {unit_id: ACT_EAR_PERK_UP, weight: 1.0}
+          - {unit_id: ACT_HEAD_LOOK_AROUND, weight: 1.0}
+          - {unit_id: ACT_POSTURE_ALERT_STAND, weight: 1.0}
+          - {unit_id: ACT_HEAD_ALERT, weight: 1.0}
+          - {unit_id: ACT_LOCO_SCAN, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: low move away
+        stage_type: low_move_away
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_POSTURE_CROUCH, weight: 1.0}
+          - {unit_id: ACT_POSTURE_CROUCH_RUN, weight: 1.0}
+          - {unit_id: ACT_LOCO_BACK_AWAY, weight: 1.0}
+          - {unit_id: ACT_TAIL_TUCK, weight: 1.0}
+          - {unit_id: ACT_EAR_FLATTEN, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: hide or observe
+        stage_type: hide_or_observe
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LOCO_HIDE, weight: 1.0}
+          - {unit_id: ACT_POSTURE_CROUCH, weight: 1.0}
+          - {unit_id: ACT_EAR_FLATTEN, weight: 1.0}
+          - {unit_id: ACT_TAIL_TUCK, weight: 1.0}
+          - {unit_id: ACT_VOCAL_GROWL_LOW, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── sit (migrated, 1 stages) ─────────────────────────────
+  sit:
+    behavior_name: sit
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: settle into sit
+        stage_type: settle_into_sit
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_POSTURE_SIT, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_SLOW, weight: 1.0}
+          - {unit_id: ACT_EAR_RELAX, weight: 1.0}
+          - {unit_id: ACT_HEAD_GAZE_OWNER, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── sitPolitely (migrated, 1 stages) ─────────────────────────────
+  sitPolitely:
+    behavior_name: sitPolitely
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: polite settle
+        stage_type: polite_settle
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_POSTURE_SIT, weight: 1.0}
+          - {unit_id: ACT_HEAD_GAZE_OWNER, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_SLOW, weight: 1.0}
+          - {unit_id: ACT_EAR_PERK_UP, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── sniffObject (migrated, 2 stages) ─────────────────────────────
+  sniffObject:
+    behavior_name: sniffObject
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: approach target
+        stage_type: approach_target
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LOCO_APPROACH_SLOW, weight: 1.0}
+          - {unit_id: ACT_LOCO_WALK_SLOW, weight: 1.0}
+          - {unit_id: ACT_HEAD_TILT, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: sniff closely
+        stage_type: sniff_closely
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_HEAD_SNIFF_OBJECT, weight: 1.0}
+          - {unit_id: ACT_HEAD_SNIFF_GROUND, weight: 1.0}
+          - {unit_id: ACT_HEAD_TILT, weight: 1.0}
+          - {unit_id: ACT_EAR_SWIVEL, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── spinOnce (migrated, 2 stages) ─────────────────────────────
+  spinOnce:
+    behavior_name: spinOnce
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: spin
+        stage_type: spin
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LOCO_SPIN, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_FAST, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: recover stance
+        stage_type: recover_stance
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_POSTURE_ALERT_STAND, weight: 1.0}
+          - {unit_id: ACT_HEAD_GAZE_OWNER, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_SLOW, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── spitOut (migrated, 1 stages) ─────────────────────────────
+  spitOut:
+    behavior_name: spitOut
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: stop and release
+        stage_type: stop_and_release
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_POSTURE_STOP, weight: 1.0}
+          - {unit_id: ACT_LOCO_STOP, weight: 1.0}
+          - {unit_id: ACT_MOUTH_RELEASE, weight: 1.0}
+          - {unit_id: ACT_POSTURE_RELAXED_STAND, weight: 1.0}
+          - {unit_id: ACT_HEAD_LOOK_AROUND, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── tailUpAndWag (migrated, 1 stages) ─────────────────────────────
+  tailUpAndWag:
+    behavior_name: tailUpAndWag
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: tail up wagging
+        stage_type: tail_up_wagging
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_TAIL_WAG_FAST, weight: 1.0}
+          - {unit_id: ACT_POSTURE_ALERT_STAND, weight: 1.0}
+          - {unit_id: ACT_EAR_PERK_UP, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── trotToOwner (migrated, 2 stages) ─────────────────────────────
+  trotToOwner:
+    behavior_name: trotToOwner
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: spot owner
+        stage_type: spot_owner
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_HEAD_GAZE_OWNER, weight: 1.0}
+          - {unit_id: ACT_EAR_PERK_UP, weight: 1.0}
+          - {unit_id: ACT_POSTURE_ALERT_STAND, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: trot closer
+        stage_type: trot_closer
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LOCO_TROT_TOWARDS, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_FAST, weight: 1.0}
+          - {unit_id: ACT_VOCAL_BARK_HAPPY, weight: 1.0}
+          - {unit_id: ACT_HEAD_GAZE_OWNER, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── walkToOwner (migrated, 2 stages) ─────────────────────────────
+  walkToOwner:
+    behavior_name: walkToOwner
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: locate owner
+        stage_type: locate_owner
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_HEAD_GAZE_OWNER, weight: 1.0}
+          - {unit_id: ACT_HEAD_LOOK_AROUND, weight: 1.0}
+          - {unit_id: ACT_EAR_PERK_UP, weight: 1.0}
+          - {unit_id: ACT_POSTURE_ALERT_STAND, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+      - stage_name: walk closer
+        stage_type: walk_closer
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LOCO_WALK_SLOW, weight: 1.0}
+          - {unit_id: ACT_LOCO_APPROACH_SLOW, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_SLOW, weight: 1.0}
+          - {unit_id: ACT_HEAD_GAZE_OWNER, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+
+  # ── zoomiesRun (migrated, 1 stages) ─────────────────────────────
+  zoomiesRun:
+    behavior_name: zoomiesRun
+    description: "Migrated from legacy behavior catalog."
+    stages:
+      - stage_name: zoomies
+        stage_type: zoomies
+        selection_policy: random
+        required: true
+        skip_on_fail: false
+        fixed: false
+        candidates:
+          - {unit_id: ACT_LOCO_ZOOMIES, weight: 1.0}
+          - {unit_id: ACT_LOCO_SPIN, weight: 1.0}
+          - {unit_id: ACT_LOCO_HOP_IN_PLACE, weight: 1.0}
+          - {unit_id: ACT_TAIL_WAG_FAST, weight: 1.0}
+          - {unit_id: ACT_VOCAL_BARK_HAPPY, weight: 1.0}
+        conditions: {}
+        success_condition:
+          type: action_completed
+

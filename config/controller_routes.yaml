@@ -1,0 +1,28 @@
+# Controller routes — maps action IDs to controller adapters
+routes:
+  # Expression adapter
+  ACT_DILATE_PUPILS: expression
+  # Audio adapter
+  ACT_BARK_SHORT_EXCITED: audio
+  ACT_BARK_OR_WHINE: audio
+  ACT_WHINE_LOW: audio
+  ACT_WHINE_HIGH: audio
+  ACT_GROWL_LOW: audio
+  ACT_CALL_FOR_HELP: audio
+  ACT_BARK_OR_HOWL: audio
+  ACT_WHINE_OR_BARK_SOFTLY: audio
+  ACT_GROWL_WHILE_EATING: audio
+  ACT_WHINE_SOFTLY: audio
+  ACT_BURP: audio
+  # Gimbal + motion
+  ACT_TILT_HEAD: gimbal_motion
+  # Navigation + motion
+  ACT_RUN_ZOOMIES: navigation_motion
+  ACT_RUN_BACK_AND_FORTH: navigation_motion
+  ACT_MOVE_RAPIDLY: navigation_motion
+  # Perception + navigation + manipulation
+  ACT_FETCH_TOY: perception_navigation_manipulation
+  ACT_RETURN_TO_CHARGER: navigation_charging
+  ACT_CHASE_ROLLING_FOOD: perception_navigation
+  # Default route for unlisted actions: motion (used as fallback)
+  _default: motion

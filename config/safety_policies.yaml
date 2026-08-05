@@ -1,0 +1,11 @@
+# Safety policies — high-risk action authorization (default: safe)
+allow_jump_on_person: false
+allow_gentle_mouthing: false
+allow_paw_contact: true
+allow_bite_object: false
+allow_carry_object: true
+allow_hide_object: false
+allow_knock_over_object: false
+allow_rummage_trash: false
+allow_scratch_door: false
+allow_mouth_contact: false
