@@ -1,274 +1,187 @@
 # MarsDog Action Executor
 
-仿生机器狗**行为执行引擎**。接收上游行为树下发的 `behavior_name` + `params_json`，解析参数 → 解析别名 → 生成阶段化动作计划 → 按条件过滤候选 → 选择执行单元 → 驱动控制器 → 返回 feedback 和 result。
+> 独立项目交接、Action 契约、视觉跟随、AGV 与调试说明见
+> [docs/HANDOFF.md](docs/HANDOFF.md)。
 
-> **职责**：本项目是「行为 → 参数解析 → 模板 → Stage → 条件过滤 → 单元选择 → 控制器执行」的执行器，**不是**行为决策器。
+仿生机器狗行为执行器。接收上游行为树下发的 `behavior_name` 和
+`params_json`，按新的行为动作对照表生成 Stage，选择精确的 `ACT_*` 并执行。
 
-## 三包架构
+## 严格行为树契约
 
+运行时唯一行为来源是
+[config/behavior_tree_actions.yaml](config/behavior_tree_actions.yaml)：
+
+- 53 个可执行行为；
+- 211 条候选动作记录；
+- 188 个唯一 `ACT_*`；
+- 行为名和动作名均大小写敏感；
+- 不加载旧行为模板；
+- 不解析旧行为 alias；
+- 不向运行时动作目录暴露新表之外的动作。
+
+例如：
+
+```text
+sit_down       -> ACT_BASIC_SIT
+emergency_stop -> ACT_SYSTEM_EMERGENCY_STOP
 ```
-marsdog_interfaces          ← 公共接口定义（action / msg）
-       ↑              ↑
-       │              │
-marsdog_behavior    marsdog_action_executor
-(Action Client)     (Action Server)  ← 本包
+
+`defecate`、`go_back`、`expressJoy`、`wagTailFast`、
+`seek_food_or_water` 等不在新表中的旧名称会被拒绝。
+
+## 数据流
+
+```text
+ROS2 ExecuteBehavior.Goal
+  behavior_name + params_json
+        │
+        ▼
+GoalParser
+  params_json -> ExecutionContext
+        │
+        ▼
+BehaviorResolver
+  精确校验 behavior_name 是否属于 53 个直接行为
+        │
+        ▼
+ConfigLoader
+  从 behavior_tree_actions.yaml 获取有序 Stage
+  校验 action_catalog.yaml 恰好包含表引用的 188 个 ACT_*
+        │
+        ▼
+StageExecutor
+  每 Stage: candidates -> eligibility -> random_one -> execute
+        │
+        ├─ Feedback.current_action = 精确 ACT_* ID
+        └─ Result.behavior_name = 原 behavior_name
 ```
 
-| 包 | 角色 | 说明 |
+## ROS2 接口
+
+| 接口 | 类型 | 用途 |
 |---|---|---|
-| `marsdog_interfaces` | 接口定义 | `ExecuteBehavior.action`，只需 `colcon build` |
-| `marsdog_behavior` | 行为树 / Action Client | 决策层，下发 `behavior_name` + `params_json` |
-| **`marsdog_action_executor`** | Action Server | **本包**，解析 → 计划 → 执行 → 反馈 |
+| `/execute_behavior` | `marsdog_interfaces/action/ExecuteBehavior` | 正式行为调用 |
+| `/debug/execute_behavior/goal` | `std_msgs/msg/String` JSON | Goal 可视化 |
+| `/debug/execute_behavior/feedback` | `std_msgs/msg/String` JSON | Stage/动作/进度 |
+| `/debug/execute_behavior/result` | `std_msgs/msg/String` JSON | 终态可视化 |
+| `/cmd_vel` | `geometry_msgs/msg/Twist` | 可选 AGV 运动输出 |
+| `/navigate_to_pose` | `nav2_msgs/action/NavigateToPose` | 可选语义点位导航 |
+| `/spin` | `nav2_msgs/action/Spin` | 按唤醒声源角度闭环转向 |
 
-## 快速开始
+Feedback 在每个 Stage 执行完成后发布一次，不是固定 10Hz。
+AGV Twist 在运动段执行期间默认按 10Hz 发布。
+
+真机板端的 `/agv_pro_node` 位于 Domain 1。启动行为树、动作执行器、仿真桥和
+rosbridge 前必须统一设置：
 
 ```bash
-uv sync                                    # 安装依赖
-uv run pytest -q                           # 全部测试（619 个）
-uv run marsdog-action-demo                 # 独立 Demo（默认行为）
-uv run marsdog-action-demo sit 42          # 指定行为 + 固定随机种子
-uv run marsdog-action-demo expressJoy      # 情绪行为
-uv run marsdog-action-demo wagTailFast     # 旧行为名 (alias → expressJoy)
+export ROS_DOMAIN_ID=1
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export ROS_LOCALHOST_ONLY=0
 ```
 
-## 项目结构
+只把动作执行器放到 Domain 1 会导致 Domain 0 的行为树无法发现
+`/execute_behavior`。
 
-```
+## 主要文件
+
+```text
+config/
+├── behavior_tree_actions.yaml         # 唯一行为定义
+├── action_catalog.yaml                # 新表引用的 188 个动作元数据
+├── agv_motion_groups.yaml             # 直接动作和到点 Stage 的 11 套 Twist 组
+├── navigation_waypoints.yaml          # A-E 点位与 11 个行为的导航/Stage 映射
+├── wake_orientation.yaml              # 唤醒角度校准和 Nav2 Spin 配置
+├── controller_routes.yaml
+└── safety_policies.yaml
+
 marsdog_action_executor/
-├── marsdog_action_executor/
-│   ├── models.py                  # BehaviorGoal / ActionStep / ActionStage / ActionPlan / ExecutionFeedback / ExecutionResult
-│   ├── execution_context.py       # ExecutionContext — 参数标准化与校验
-│   ├── goal_parser.py             # GoalParser — ROS2 Goal → ExecutionContext
-│   ├── behavior_resolver.py       # BehaviorResolver — alias 解析 / 参数注入 / 交互回退
-│   ├── behavior_catalog.py        # 旧版行为目录 (保留兼容)
-│   ├── planner.py                 # 旧版 Planner (保留兼容)
-│   ├── executor.py                # 旧版 Executor (保留兼容)
-│   ├── eligibility_checker.py     # EligibilityChecker — 40+ 条件过滤
-│   ├── posture_manager.py         # PostureManager — 姿态状态机
-│   ├── interrupt_manager.py       # InterruptManager — 中断策略 (immediate/safe_point/non_interruptible)
-│   ├── result_evaluator.py        # ResultEvaluator — 行为级成功条件
-│   ├── stage_executor.py          # StageExecutor — 7 种选择策略 + 5 种执行单元
-│   ├── config_loader.py           # ConfigLoader — YAML 加载 + 启动校验
-│   ├── controller_adapters.py     # 旧版 Mock adapter (保留兼容)
-│   ├── ros_node.py                # ROS2 Action Server
-│   ├── debug_publishers.py        # /debug/execute_behavior/* 发布器
-│   ├── ros2_compat.py             # HAS_ROS2 + marsdog_interfaces 优先导入
-│   ├── standalone_demo.py         # 独立 Demo
-│   ├── units/
-│   │   ├── base_unit_executor.py  # BaseUnitExecutor + UnitState
-│   │   └── unit_executors.py      # 5 种执行器: atomic/composite/task/policy/modifier
-│   └── adapters/
-│       └── mock_adapters.py       # 6 种 Mock: motion/gimbal/audio/nav/perception/expression
-│
-├── config/
-│   ├── behavior_templates.yaml    # 22 canonical behavior 的完整 Stage 定义 (989 行)
-│   ├── action_catalog.yaml        # 202 个执行单元元数据 (2614 行)
-│   ├── behavior_aliases.yaml      # 38 条旧名→新名映射 (含参数注入)
-│   ├── emotion_action_pools.yaml  # 6 情绪 × level × solo/interactive 动作池
-│   ├── controller_routes.yaml     # action → adapter 路由
-│   └── safety_policies.yaml       # 高风险动作授权开关
-│
-├── docs/ARCHITECTURE.md           # 架构与通信设计文档
-├── launch/action_executor.launch.py
-├── tests/                         # 619 tests
-└── README.md
+├── config_loader.py       # 严格加载并校验 53 behavior / 188 action
+├── behavior_resolver.py   # 精确名称校验，无 alias
+├── goal_parser.py
+├── execution_context.py
+├── stage_executor.py
+├── adapters/agv_adapter.py
+├── adapters/navigation_adapter.py
+├── adapters/wake_orientation_adapter.py
+├── result_evaluator.py
+├── ros_node.py
+└── units/
+
+docs/
+├── ARCHITECTURE.md
+├── ROS2.md
+├── AGV_ROS2_INTEGRATION.md
+├── BEHAVIOR_ACTION_MAP.md
+├── BEHAVIOR_TREE_ACTION_CONTRACT.md
+└── SIMULATION_PAGE_INTEGRATION.md
 ```
 
-## 数据流 (v2)
+## 快速验证
 
-```
-ROS2 Action Goal (behavior_name + params_json)
-    │
-    ▼
-GoalParser
-    │  → ExecutionContext (标准化 level/sleep_depth/interaction_mode/target)
-    ▼
-BehaviorResolver
-    │  1. alias 解析 (旧名 → canonical + 参数注入)
-    │  2. 交互模式回退 (interactive 无 target → solo)
-    │  3. level 从 variant 推导
-    ▼
-StageExecutor
-    │  对每个 Stage:
-    │    1. 读取候选池 (从 behavior_templates.yaml)
-    │    2. EligibilityChecker 过滤 (条件/姿态/安全)
-    │    3. UnitSelector 按策略选择 (random_one/weighted_random/condition_first/...)
-    │    4. UnitExecutor 执行 (atomic_action/composite_action/task/policy/modifier)
-    │    5. PostureManager 更新姿态
-    │    6. InterruptManager 检查中断
-    ▼
-ExecutionFeedback (10Hz)              ExecutionResult
-    progress / current_action            status / result_code / reward
-    safe_to_interrupt / current_stage    completed_stages / executed_units
-    current_posture
+```bash
+uv sync
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q
 ```
 
-## Canonical Behaviors（22 个）
+无 ROS2 的本地演示：
 
-| 类别 | 行为 |
-|------|------|
-| 生理需求 | `eatNormally` `eatExcitedly` `defecate` `cleanSelf` `sleepNow` `restInPlace` `recharge` |
-| 动物社交 | `testAnimalBoundary` `greetAnimal` `inviteAnimalToPlay` |
-| 人类社交 | `requestResourceFromHuman` `seekHumanInteraction` `inviteHumanToPlay` |
-| 探索 | `exploreRoom` `inspectObject` `inspectKnownObject` |
-| 情绪表达 | `expressCalm` `expressJoy` `expressExcitement` `expressAnxiety` `expressFear` `expressCuriosity` |
+```bash
+uv run python -m marsdog_action_executor.standalone_demo sit_down 42
+```
 
-行为树只下发 `behavior_name` + `params_json`（含 `level`、`interaction_mode`、`target` 等）。本包根据 `behavior_name` 选择模板，根据 `level` + `interaction_mode` 从情绪动作池中选候选。
-
-## 别名机制
-
-`config/behavior_aliases.yaml` 管理旧名→新名映射，支持参数注入：
-
-| 旧名 | 新名 | 注入参数 |
-|------|------|---------|
-| `wagTailFast` | `expressJoy` | `level: MID, interaction_mode: interactive` |
-| `wagTailGently` | `expressJoy` | `level: LOW, interaction_mode: interactive` |
-| `headTilt` | `expressCuriosity` | `level: LOW, interaction_mode: interactive` |
-| `hideAway` | `expressFear` | `level: HIGH, interaction_mode: solo` |
-| `seek_food_or_water` | `eatNormally` | — |
-| `emergency_stop` | `emergencyStop` | — |
-
-## 执行单元分类
-
-| unit_type | 说明 | 示例 |
-|-----------|------|------|
-| `atomic_action` | 短时确定动作，单控制器完成 | `ACT_WAG_TAIL_GENTLY`, `ACT_TILT_HEAD` |
-| `composite_action` | 多子动作序列 | `ACT_PLAY_BOW_INVITE` |
-| `task` | 需导航/感知/跟踪/循环检查 | `ACT_RETURN_TO_CHARGER`, `ACT_FETCH_TOY` |
-| `policy` | 不产生身体动作，直接完成 Stage | `ACT_IGNORE_DOOR` |
-| `modifier` | 修改后续执行参数 | `ACT_SLOW_MOVEMENT` (speed×0.45) |
-
-## Selection Policies（7 种）
-
-| 策略 | 说明 |
-|------|------|
-| `fixed` | 固定候选（按顺序全执行） |
-| `sequence` | 按顺序依次执行 |
-| `random_one` | 均匀随机选一个 |
-| `weighted_random` | 按权重随机选一个 |
-| `random_n` | 随机选 N 个 |
-| `loop_random` | 循环随机（min_loops ~ max_loops） |
-| `condition_first` | 选第一个满足条件的（用于充电分支等） |
-
-选择流程：候选池 → 条件过滤 → 姿态检查 → 安全检查 → 冷却检查 → eligible → 选择。
-
-## 条件系统（40+ 条件）
-
-`EligibilityChecker` 统一管理，条件名在启动时校验。支持：
-
-`owner_visible`, `target_visible`, `person_not_visible`, `person_too_far`, `contact_distance`, `target_moving`, `charger_known`, `charger_available`, `charger_unavailable`, `elimination_type_pee`, `elimination_type_poop`, `toy_available`, `carrying_toy`, `food_resource_visible`, `rolling_food_detected`, `object_carryable`, `object_safe_for_mouth`, `jump_interaction_allowed`, `gentle_mouthing_allowed`, `allow_bite_object`, `allow_carry_object`, `allow_rummage_trash`, `allow_scratch_door` 等。
-
-## 中断与取消
-
-| 策略 | 行为 |
-|------|------|
-| `immediate` | 立即停止控制器 → cleanup → CANCELED |
-| `safe_point` | 设标志 → 等安全点 → cleanup → CANCELED |
-| `non_interruptible` | 完成当前单元 → 不进入下一单元 → cleanup → CANCELED |
-
-Cleanup：停止底盘/导航/云台/音频 → 释放物体 → 清除 Modifier → 安全姿态。
-
-## 行为级成功条件
-
-| Behavior | 条件 |
-|----------|------|
-| `eatNormally` / `eatExcitedly` | eating Stage 完成 |
-| `defecate` | eliminating Stage 完成 |
-| `sleepNow` | sleep_pose Stage 完成 |
-| `recharge` | `charging_detected` |
-| `seekHumanInteraction` | interact Stage 完成 |
-| `express*` | 至少一个表达动作成功 |
-
-## ROS2 集成
-
-### 编译与启动
+ROS2 编译与启动：
 
 ```bash
 source /opt/ros/humble/setup.bash
 cd ~/ros2_ws
-colcon build --packages-select marsdog_interfaces marsdog_action_executor --symlink-install
+colcon build \
+  --packages-select marsdog_interfaces marsdog_action_executor \
+  --symlink-install
 source install/setup.bash
-
 ros2 run marsdog_action_executor action_executor_node
 ```
 
-### 接口清单
-
-| 接口 | 类型 | 方向 |
-|------|------|------|
-| `/execute_behavior` | ROS2 Action Server | ← Client |
-| `/debug/execute_behavior/goal` | `std_msgs/String` JSON | → 调试 |
-| `/debug/execute_behavior/feedback` | `std_msgs/String` JSON | → 调试 (10Hz) |
-| `/debug/execute_behavior/result` | `std_msgs/String` JSON | → 调试 |
-
-### 手动验证
+启用 AGV `/cmd_vel`：
 
 ```bash
-# 生理行为
-ros2 action send_goal /execute_behavior marsdog_interfaces/action/ExecuteBehavior \
-  "{goal_id: 't1', behavior_name: 'eatNormally', priority_level: 3, params_json: '{\"source\":\"need\",\"level\":\"TRIGGERED\"}', timeout_sec: 30.0}"
-
-# 情绪行为
-ros2 action send_goal /execute_behavior marsdog_interfaces/action/ExecuteBehavior \
-  "{goal_id: 't2', behavior_name: 'expressJoy', priority_level: 5, params_json: '{\"source\":\"emotion\",\"level\":\"MID\",\"interaction_mode\":\"interactive\",\"target\":{\"target_type\":\"human\",\"visible\":true}}', timeout_sec: 10.0}"
-
-# 旧行为名 (alias)
-ros2 action send_goal /execute_behavior marsdog_interfaces/action/ExecuteBehavior \
-  "{goal_id: 't3', behavior_name: 'wagTailFast', priority_level: 5, params_json: '{}', timeout_sec: 10.0}"
+ros2 launch marsdog_action_executor action_executor.launch.py \
+  agv_enabled:=true \
+  agv_cmd_vel_topic:=/cmd_vel
 ```
 
-## 控制器适配层
-
-6 种 adapter（当前均为 mock）：
-
-| Adapter | 目标接口 | 路由的动作 |
-|---------|---------|-----------|
-| Motion | `/motion/execute_motion` | 默认 |
-| Gimbal | `/gimbal/set_target` | `ACT_TILT_HEAD` 等 |
-| Audio | — | `ACT_BARK_*`, `ACT_WHINE_*`, `ACT_GROWL_*` |
-| Navigation | `/navigation/navigate_to` | `ACT_RETURN_TO_CHARGER`, `ACT_RUN_ZOOMIES` |
-| Perception | — | `TASK_APPROACH_*`, `ACT_FETCH_TOY` |
-| Expression | `/expression/play` | `ACT_DILATE_PUPILS` |
-
-## 运行测试
+同时启用 Nav2 A–E 语义点位：
 
 ```bash
-uv run pytest -q                              # 全部 619 tests
-uv run pytest -q tests/test_catalog.py        # 目录完整性
-uv run pytest -q tests/test_catalog_new.py    # 新行为专项
-uv run pytest -q tests/test_executor.py       # 执行引擎
-uv run pytest -q tests/test_planner.py        # weighted / alias / seed
-uv run pytest -q tests/test_new_executor.py   # 新 API + adapter
+ros2 launch marsdog_action_executor action_executor.launch.py \
+  agv_enabled:=true \
+  navigation_enabled:=true \
+  agv_cmd_vel_topic:=/cmd_vel \
+  navigation_action_name:=/navigate_to_pose
 ```
 
-> 无 ROS2 时测试不受影响（`HAS_ROS2` 条件导入）。
+`agv_enabled:=true` 时，`respond_owner_call` 默认会读取行为树传入的
+`wake_angle_deg` 并调用 `/spin`。角度标定和联调见
+[唤醒声源朝向说明](docs/WAKE_ORIENTATION_INTEGRATION.md)。
 
-## 职责边界
+发送行为：
 
-### 本包负责 ✅
+```bash
+ros2 action send_goal --feedback \
+  /execute_behavior \
+  marsdog_interfaces/action/ExecuteBehavior \
+  "{goal_id: 't1', behavior_id: 'sim-t1', \
+    behavior_name: 'sit_down', priority_level: 5, \
+    params_json: '{}', timeout_sec: 10.0}"
+```
 
-- `/execute_behavior` Action Server
-- `params_json` → `ExecutionContext` 解析
-- alias 解析 + 参数注入 + 交互模式回退
-- Stage 顺序执行 + 条件过滤 + 姿态管理
-- atomic/composite/task/policy/modifier 5 种执行单元
-- 中断管理（immediate/safe_point/non_interruptible）
-- 行为级成功条件判断
-- controller adapter 路由
-- debug topic（`/debug/*`）
+## 文档
 
-### 本包不负责 ❌
-
-- 行为决策 → `marsdog_behavior`
-- 需求数值计算 / 阈值判断
-- 情绪强度区间判断
-- 全局行为优先级仲裁
-- 需求/情绪值更新
-
-## 待完成
-
-- [ ] 真实硬件 controller adapters
-- [ ] ConfigLoader 集成到 ros_node 启动流程
-- [ ] 完整单元测试套件 (新模块)
-- [ ] 移除 `action/ExecuteBehavior.action` 本地副本
-- [ ] 移除 `MARSDOG_LEGACY_DEBUG_TOPICS` 兼容代码
+- [系统架构](docs/ARCHITECTURE.md)
+- [ROS2 集成说明](docs/ROS2.md)
+- [AGV ROS2 运动适配说明](docs/AGV_ROS2_INTEGRATION.md)
+- [Nav2 语义点位适配说明](docs/NAV2_WAYPOINT_INTEGRATION.md)
+- [唤醒声源朝向说明](docs/WAKE_ORIENTATION_INTEGRATION.md)
+- [行为与动作映射说明](docs/BEHAVIOR_ACTION_MAP.md)
+- [行为树动作契约](docs/BEHAVIOR_TREE_ACTION_CONTRACT.md)
+- [仿真页面接入说明](docs/SIMULATION_PAGE_INTEGRATION.md)

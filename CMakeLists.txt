@@ -6,7 +6,9 @@ find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 find_package(rclpy REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(action_msgs REQUIRED)
+find_package(nav2_msgs REQUIRED)
 
 # NOTE: ExecuteBehavior.action has been migrated to marsdog_interfaces.
 # The ros_node will prefer marsdog_interfaces.action.ExecuteBehavior when
@@ -27,10 +29,11 @@ install(
   PATTERN "__pycache__" EXCLUDE
 )
 
-# Install launcher script
+# Install launcher scripts
 install(
   PROGRAMS
     scripts/action_executor_node
+    scripts/emotion_display
   DESTINATION lib/${PROJECT_NAME}
 )
 

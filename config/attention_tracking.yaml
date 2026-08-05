@@ -1,0 +1,13 @@
+action_executor_node:
+  ros__parameters:
+    # Visual follow speed tuning. Keep follow_max_linear_x at or below the
+    # chassis safety limit in config/agv_motion_groups.yaml.
+    follow_linear_gain: 0.75
+    follow_max_linear_x: 0.25
+    follow_max_linear_accel: 0.35
+
+    # Desired following distance and steering safety thresholds.
+    follow_target_height: 0.68
+    follow_height_deadband: 0.05
+    follow_activation_deadband: 0.10
+    follow_max_heading_error: 0.30

@@ -7,6 +7,7 @@ requires-python = ">=3.10"
 dependencies = [
     "pyyaml>=6.0",
     "pytest>=9.0",
+    "numpy>=2.2.6",
 ]
 
 [project.scripts]
@@ -15,6 +16,10 @@ marsdog-action-demo = "marsdog_action_executor.standalone_demo:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple"
+default = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

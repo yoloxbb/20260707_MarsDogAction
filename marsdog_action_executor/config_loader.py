@@ -1,20 +1,19 @@
 """ConfigLoader — loads and validates YAML configuration files.
 
 Startup validation catches:
-  - missing canonical behavior templates
+  - missing behavior-tree action templates
   - missing referenced actions
   - invalid selection_policy / unit_type / interrupt_policy
   - duplicate stage orders
   - empty required stages
-  - alias cycles
   - weight < 0
-  - timeout <= 0 or excessively large
+  - timeout < 0 or excessively large
 """
 
 from __future__ import annotations
 
 import logging
-import os
+import math
 from pathlib import Path
 from typing import Any
 
@@ -25,8 +24,6 @@ logger = logging.getLogger(__name__)
 VALID_SELECTION_POLICIES = {
     "fixed", "sequence", "random_one", "weighted_random",
     "random_n", "loop_random", "condition_first",
-    # Legacy aliases
-    "random", "first", "weighted",
 }
 
 VALID_UNIT_TYPES = {
@@ -35,14 +32,7 @@ VALID_UNIT_TYPES = {
 
 VALID_INTERRUPT_POLICIES = {
     "immediate", "safe_point", "non_interruptible",
-    # Legacy aliases from action_catalog.yaml
-    "safe", "unsafe", "deferred",
 }
-
-VALID_FAILURE_POLICIES = {
-    "abort", "skip_stage", "retry",
-}
-
 
 class ConfigurationError(Exception):
     """Raised when configuration is invalid — should prevent node startup."""
@@ -60,44 +50,42 @@ class ConfigLoader:
 
         loader = ConfigLoader("/path/to/config")
         loader.load_all()
-        templates = loader.behavior_templates
+        templates = loader.behavior_tree_templates
         catalog = loader.action_catalog
     """
 
     def __init__(self, config_dir: str | Path = "config") -> None:
         self._dir = Path(config_dir)
-        self.behavior_templates: dict[str, Any] = {}
+        self.behavior_tree_templates: dict[str, Any] = {}
         self.action_catalog: dict[str, Any] = {}
-        self.emotion_pools: dict[str, Any] = {}
-        self.object_pools: dict[str, Any] = {}
-        self.behavior_aliases: dict[str, Any] = {}
-        self.posture_transitions: dict[str, Any] = {}
         self.controller_routes: dict[str, Any] = {}
         self.safety_policies: dict[str, Any] = {}
-        self.composite_actions: dict[str, Any] = {}
-        self.task_catalog: dict[str, Any] = {}
+        self.agv_motion_config: dict[str, Any] = {}
+        self.navigation_config: dict[str, Any] = {}
+        self.sound_config: dict[str, Any] = {}
+        self.wake_orientation_config: dict[str, Any] = {}
         self._errors: list[str] = []
 
     # Mapping of filename → (attr, wrapper_key)
     # wrapper_key=None means the YAML top level IS the data (no unwrap needed).
     _CONFIG_FILES: list[tuple[str, str, str | None]] = [
-        ("behavior_templates.yaml", "behavior_templates", "behavior_templates"),
+        ("behavior_tree_actions.yaml", "behavior_tree_templates", "behaviors"),
         ("action_catalog.yaml", "action_catalog", "action_units"),
-        ("emotion_action_pools.yaml", "emotion_pools", None),
-        ("object_action_pools.yaml", "object_pools", None),
-        ("behavior_aliases.yaml", "behavior_aliases", "behavior_aliases"),
-        ("posture_transitions.yaml", "posture_transitions", None),
         ("controller_routes.yaml", "controller_routes", None),
         ("safety_policies.yaml", "safety_policies", None),
-        ("composite_actions.yaml", "composite_actions", None),
-        ("task_catalog.yaml", "task_catalog", None),
+        ("agv_motion_groups.yaml", "agv_motion_config", None),
+        ("navigation_waypoints.yaml", "navigation_config", None),
+        ("sound_config.yaml", "sound_config", "bark_sound"),
+        ("wake_orientation.yaml", "wake_orientation_config", None),
     ]
 
     _REQUIRED_CONFIGS = {
-        "behavior_templates.yaml",
+        "behavior_tree_actions.yaml",
         "action_catalog.yaml",
-        "emotion_action_pools.yaml",
-        "behavior_aliases.yaml",
+        "controller_routes.yaml",
+        "agv_motion_groups.yaml",
+        "navigation_waypoints.yaml",
+        "wake_orientation.yaml",
     }
 
     def load_all(self) -> None:
@@ -105,6 +93,22 @@ class ConfigLoader:
         for filename, attr, wrapper_key in self._CONFIG_FILES:
             required = filename in self._REQUIRED_CONFIGS
             self._load_yaml(filename, attr, required=required, unwrap_key=wrapper_key)
+
+        referenced_actions = {
+            candidate.get("unit_id")
+            for behavior in self.behavior_tree_templates.values()
+            for stage in behavior.get("stages", [])
+            for candidate in stage.get("candidates", [])
+            if isinstance(candidate, dict) and candidate.get("unit_id")
+        }
+        catalog_actions = set(self.action_catalog)
+        unexpected_actions = catalog_actions - referenced_actions
+        if unexpected_actions:
+            self._errors.append(
+                "action_catalog.yaml contains actions outside "
+                "behavior_tree_actions.yaml: "
+                + ", ".join(sorted(unexpected_actions))
+            )
 
         self._validate()
 
@@ -137,7 +141,7 @@ class ConfigLoader:
                 if required:
                     self._errors.append(f"Empty config: {filepath}")
                 return
-            # Unwrap known top-level wrapper key (e.g. "behavior_templates: {...}" → {...})
+            # Unwrap the contract's top-level wrapper key.
             if unwrap_key and isinstance(data, dict) and unwrap_key in data:
                 data = data[unwrap_key]
             if not isinstance(data, dict):
@@ -153,12 +157,14 @@ class ConfigLoader:
         """Run all validation checks."""
         self._validate_behavior_templates()
         self._validate_action_catalog()
-        self._validate_aliases()
-        self._validate_emotion_pools()
-        self._validate_object_pools()
+        self._validate_controller_routes()
+        self._validate_agv_motion_config()
+        self._validate_navigation_config()
+        self._validate_sound_config()
+        self._validate_wake_orientation_config()
 
     def _validate_behavior_templates(self) -> None:
-        templates = self.behavior_templates
+        templates = self.get_all_behavior_templates()
         if not templates:
             return
         for name, config in templates.items():
@@ -179,6 +185,15 @@ class ConfigLoader:
                     self._errors.append(f"Behavior {name!r} stage {sid!r}: invalid selection_policy {policy!r}")
                 if stage.get("required", True) and not stage.get("candidates"):
                     self._errors.append(f"Behavior {name!r} stage {sid!r}: required stage has no candidates")
+                for candidate in stage.get("candidates", []):
+                    if not isinstance(candidate, dict):
+                        continue
+                    unit_id = candidate.get("unit_id")
+                    if unit_id and unit_id not in self.action_catalog:
+                        self._errors.append(
+                            f"Behavior {name!r} stage {sid!r}: "
+                            f"unknown action {unit_id!r}"
+                        )
 
     def _validate_action_catalog(self) -> None:
         catalog = self.action_catalog
@@ -200,55 +215,705 @@ class ConfigLoader:
             if weight is not None and (not isinstance(weight, (int, float)) or weight < 0):
                 self._errors.append(f"Action {unit_id!r}: invalid weight={weight}")
 
-    def _validate_aliases(self) -> None:
-        aliases = self.behavior_aliases
-        if not aliases:
+    def _validate_controller_routes(self) -> None:
+        routes = self.controller_routes.get("routes", {})
+        if not isinstance(routes, dict):
+            self._errors.append("controller_routes.yaml: routes must be a mapping")
             return
-        # Check for cycles
-        for src, cfg in aliases.items():
-            resolved = cfg.get("resolved_behavior_name", "")
-            if resolved == src:
-                self._errors.append(f"Alias {src!r}: self-referential (cycle)")
-            # Check transitive (simple: resolved also in aliases)
-            if resolved in aliases:
-                transitive = aliases[resolved].get("resolved_behavior_name", "")
-                if transitive == src:
-                    self._errors.append(f"Alias cycle: {src} → {resolved} → {src}")
+        for unit_id in routes:
+            if unit_id != "_default" and unit_id not in self.action_catalog:
+                self._errors.append(
+                    f"controller_routes.yaml: unknown action {unit_id!r}"
+                )
 
-    def _validate_emotion_pools(self) -> None:
-        pools = self.emotion_pools
-        if not pools:
+    def _validate_agv_motion_config(self) -> None:
+        config = self.agv_motion_config
+        if not config:
             return
-        for behavior, variants in pools.items():
-            for level, modes in variants.items():
-                if level.upper() not in ("LOW", "MID", "HIGH", "TRIGGERED", "OVERFLOW"):
-                    self._errors.append(f"Emotion pool {behavior!r}: invalid level {level!r}")
-                if isinstance(modes, dict):
-                    for mode in ("solo", "interactive"):
-                        if mode not in modes:
-                            self._errors.append(f"Emotion pool {behavior!r}/{level}: missing {mode!r} mode")
 
-    def _validate_object_pools(self) -> None:
-        pools = self.object_pools
-        if not pools:
+        groups = config.get("motion_groups", {})
+        action_groups = config.get("action_motion_groups", {})
+        limits = config.get("limits", {})
+        routes = self.controller_routes.get("routes", {})
+
+        if not isinstance(groups, dict) or not groups:
+            self._errors.append(
+                "agv_motion_groups.yaml: motion_groups must be a non-empty mapping"
+            )
             return
+        if not isinstance(action_groups, dict) or not action_groups:
+            self._errors.append(
+                "agv_motion_groups.yaml: action_motion_groups must be "
+                "a non-empty mapping"
+            )
+            return
+
+        rate = config.get("publish_rate_hz", 10.0)
+        if not self._is_finite_number(rate) or not 1.0 <= float(rate) <= 100.0:
+            self._errors.append(
+                "agv_motion_groups.yaml: publish_rate_hz must be within [1, 100]"
+            )
+
+        stop_count = config.get("stop_publish_count", 3)
+        if (
+            not isinstance(stop_count, int)
+            or isinstance(stop_count, bool)
+            or not 1 <= stop_count <= 20
+        ):
+            self._errors.append(
+                "agv_motion_groups.yaml: stop_publish_count must be within [1, 20]"
+            )
+
+        for key in ("max_linear_x", "max_linear_y", "max_angular_z"):
+            value = limits.get(key)
+            if not self._is_finite_number(value) or float(value) < 0.0:
+                self._errors.append(
+                    f"agv_motion_groups.yaml: limits.{key} must be >= 0"
+                )
+
+        for group_name, segments in groups.items():
+            # Dict-type groups (e.g. pick_random)
+            if isinstance(segments, dict):
+                self._validate_motion_group_dict(group_name, segments, limits)
+                continue
+            # List-type groups (traditional fixed segments)
+            if not isinstance(segments, list) or not segments:
+                self._errors.append(
+                    f"AGV motion group {group_name!r}: segments must be non-empty"
+                )
+                continue
+            for index, segment in enumerate(segments):
+                if not isinstance(segment, dict):
+                    self._errors.append(
+                        f"AGV motion group {group_name!r} segment {index}: "
+                        "expected mapping"
+                    )
+                    continue
+                duration = segment.get("duration_sec")
+                if not self._is_finite_number(duration) or float(duration) <= 0.0:
+                    self._errors.append(
+                        f"AGV motion group {group_name!r} segment {index}: "
+                        "duration_sec must be > 0"
+                    )
+                for key in ("linear_x", "linear_y", "angular_z"):
+                    value = segment.get(key, 0.0)
+                    if not self._is_finite_number(value):
+                        self._errors.append(
+                            f"AGV motion group {group_name!r} segment {index}: "
+                            f"{key} must be finite"
+                        )
+
+        for unit_id, group_name in action_groups.items():
+            if unit_id not in self.action_catalog:
+                self._errors.append(
+                    f"agv_motion_groups.yaml: unknown action {unit_id!r}"
+                )
+            if group_name not in groups:
+                self._errors.append(
+                    f"AGV action {unit_id!r}: unknown motion group {group_name!r}"
+                )
+            if routes.get(unit_id) != "agv":
+                self._errors.append(
+                    f"AGV action {unit_id!r}: controller route must be 'agv'"
+                )
+
+        for unit_id, route in routes.items():
+            if route == "agv" and unit_id not in action_groups:
+                self._errors.append(
+                    f"AGV controller route {unit_id!r}: no motion group configured"
+                )
+
+    def _validate_motion_group_dict(
+        self, group_name: str, config: dict, limits: dict,
+    ) -> None:
+        """Validate a dict-type motion group (e.g. ``pick_random``)."""
+        group_type = config.get("type", "")
+        if group_type == "pick_random":
+            candidates = config.get("candidates", [])
+            if not isinstance(candidates, list) or not candidates:
+                self._errors.append(
+                    f"AGV motion group {group_name!r}: pick_random "
+                    "candidates must be non-empty"
+                )
+                return
+            for i, cand in enumerate(candidates):
+                if not isinstance(cand, dict):
+                    self._errors.append(
+                        f"AGV motion group {group_name!r} candidate {i}: "
+                        "expected mapping"
+                    )
+                    continue
+                for key in ("linear_x", "linear_y", "angular_z"):
+                    value = cand.get(key, 0.0)
+                    if not self._is_finite_number(value):
+                        self._errors.append(
+                            f"AGV motion group {group_name!r} candidate {i}: "
+                            f"{key} must be finite"
+                        )
+            dmin = config.get("duration_min_sec")
+            dmax = config.get("duration_max_sec")
+            if not self._is_finite_number(dmin) or float(dmin) <= 0.0:
+                self._errors.append(
+                    f"AGV motion group {group_name!r}: "
+                    "duration_min_sec must be > 0"
+                )
+            if not self._is_finite_number(dmax) or float(dmax) <= 0.0:
+                self._errors.append(
+                    f"AGV motion group {group_name!r}: "
+                    "duration_max_sec must be > 0"
+                )
+            if (
+                self._is_finite_number(dmin)
+                and self._is_finite_number(dmax)
+                and float(dmin) >= float(dmax)
+            ):
+                self._errors.append(
+                    f"AGV motion group {group_name!r}: "
+                    "duration_min_sec must be < duration_max_sec"
+                )
+        else:
+            self._errors.append(
+                f"AGV motion group {group_name!r}: unknown type {group_type!r}"
+            )
+
+    def _validate_navigation_config(self) -> None:
+        config = self.navigation_config
+        if not config:
+            return
+
+        waypoints = config.get("waypoints", {})
+        behavior_routes = config.get("behavior_routes", {})
+        action_groups = config.get("action_motion_groups", {})
+        motion_groups = self.agv_motion_config.get("motion_groups", {})
+
+        if not isinstance(config.get("enabled", False), bool):
+            self._errors.append(
+                "navigation_waypoints.yaml: enabled must be boolean"
+            )
+        action_name = config.get("action_name")
+        if not isinstance(action_name, str) or not action_name.startswith("/"):
+            self._errors.append(
+                "navigation_waypoints.yaml: action_name must be an absolute "
+                "ROS action name"
+            )
+        frame_id = config.get("frame_id")
+        if not isinstance(frame_id, str) or not frame_id.strip():
+            self._errors.append(
+                "navigation_waypoints.yaml: frame_id must be non-empty"
+            )
+        for key in ("server_timeout_sec", "result_timeout_sec"):
+            value = config.get(key)
+            if not self._is_finite_number(value) or float(value) <= 0.0:
+                self._errors.append(
+                    f"navigation_waypoints.yaml: {key} must be > 0"
+                )
+
+        if not isinstance(waypoints, dict) or not waypoints:
+            self._errors.append(
+                "navigation_waypoints.yaml: waypoints must be a non-empty "
+                "mapping"
+            )
+            return
+        if not isinstance(behavior_routes, dict) or not behavior_routes:
+            self._errors.append(
+                "navigation_waypoints.yaml: behavior_routes must be a "
+                "non-empty mapping"
+            )
+            return
+        if not isinstance(action_groups, dict) or not action_groups:
+            self._errors.append(
+                "navigation_waypoints.yaml: action_motion_groups must be a "
+                "non-empty mapping"
+            )
+            return
+
+        required_pose_fields = (
+            "x",
+            "y",
+            "orientation_z",
+            "orientation_w",
+        )
+        for waypoint_name, waypoint in waypoints.items():
+            if not isinstance(waypoint, dict):
+                self._errors.append(
+                    f"Navigation waypoint {waypoint_name!r}: expected mapping"
+                )
+                continue
+            for field_name in required_pose_fields:
+                if not self._is_finite_number(waypoint.get(field_name)):
+                    self._errors.append(
+                        f"Navigation waypoint {waypoint_name!r}: "
+                        f"{field_name} must be finite"
+                    )
+            orientation_z = waypoint.get("orientation_z")
+            orientation_w = waypoint.get("orientation_w")
+            if (
+                self._is_finite_number(orientation_z)
+                and self._is_finite_number(orientation_w)
+                and math.hypot(
+                    float(orientation_z),
+                    float(orientation_w),
+                ) < 1e-6
+            ):
+                self._errors.append(
+                    f"Navigation waypoint {waypoint_name!r}: "
+                    "orientation quaternion cannot be zero"
+                )
+
+        routed_actions: set[str] = set()
+        for behavior_name, route in behavior_routes.items():
+            if behavior_name not in self.behavior_tree_templates:
+                self._errors.append(
+                    "navigation_waypoints.yaml: unknown behavior "
+                    f"{behavior_name!r}"
+                )
+                continue
+            if not isinstance(route, dict):
+                self._errors.append(
+                    f"Navigation route {behavior_name!r}: expected mapping"
+                )
+                continue
+            waypoint_name = route.get("waypoint")
+            if waypoint_name not in waypoints:
+                self._errors.append(
+                    f"Navigation route {behavior_name!r}: unknown waypoint "
+                    f"{waypoint_name!r}"
+                )
+
+            routed_stages = route.get("stages", [])
+            if not isinstance(routed_stages, list) or not routed_stages:
+                self._errors.append(
+                    f"Navigation route {behavior_name!r}: "
+                    "stages must be a non-empty list"
+                )
+                continue
+            if any(not isinstance(stage_id, str) for stage_id in routed_stages):
+                self._errors.append(
+                    f"Navigation route {behavior_name!r}: "
+                    "every stage name must be a string"
+                )
+                continue
+            if len(routed_stages) != len(set(routed_stages)):
+                self._errors.append(
+                    f"Navigation route {behavior_name!r}: duplicate stages"
+                )
+            stage_configs = {
+                str(stage.get("stage_id")): stage
+                for stage in self.behavior_tree_templates[
+                    behavior_name
+                ].get("stages", [])
+            }
+            for stage_id in routed_stages:
+                if stage_id not in stage_configs:
+                    self._errors.append(
+                        f"Navigation route {behavior_name!r}: unknown stage "
+                        f"{stage_id!r}"
+                    )
+                    continue
+                routed_actions.update(
+                    str(candidate.get("unit_id"))
+                    for candidate in stage_configs[stage_id].get(
+                        "candidates",
+                        [],
+                    )
+                    if (
+                        isinstance(candidate, dict)
+                        and candidate.get("unit_id")
+                    )
+                )
+
+        for unit_id, group_name in action_groups.items():
+            if unit_id not in self.action_catalog:
+                self._errors.append(
+                    "navigation_waypoints.yaml: unknown action "
+                    f"{unit_id!r}"
+                )
+            if group_name not in motion_groups:
+                self._errors.append(
+                    f"Navigation action {unit_id!r}: unknown motion group "
+                    f"{group_name!r}"
+                )
+            if (
+                unit_id in self.action_catalog
+                and group_name in motion_groups
+            ):
+                action_timeout = self.action_catalog[unit_id].get(
+                    "timeout_sec",
+                    0.0,
+                )
+                group_config = motion_groups[group_name]
+                if isinstance(group_config, dict):
+                    # pick_random: worst-case = duration_max_sec
+                    group_duration = float(
+                        group_config.get("duration_max_sec", 0.0)
+                    )
+                else:
+                    group_duration = sum(
+                        float(segment["duration_sec"])
+                        for segment in group_config
+                    )
+                if (
+                    self._is_finite_number(action_timeout)
+                    and float(action_timeout) > 0.0
+                    and group_duration > float(action_timeout)
+                ):
+                    self._errors.append(
+                        f"Navigation action {unit_id!r}: motion group "
+                        f"{group_name!r} duration {group_duration:.3f}s "
+                        f"exceeds action timeout {float(action_timeout):.3f}s"
+                    )
+
+        missing_actions = routed_actions - set(action_groups)
+        if missing_actions:
+            self._errors.append(
+                "navigation_waypoints.yaml: routed stage actions without "
+                "motion groups: "
+                + ", ".join(sorted(missing_actions))
+            )
+        extra_actions = set(action_groups) - routed_actions
+        if extra_actions:
+            self._errors.append(
+                "navigation_waypoints.yaml: action motion groups outside "
+                "routed stages: "
+                + ", ".join(sorted(extra_actions))
+            )
+
+        # ── Validate random navigation config ──────────────────────────
+        self._validate_random_navigation_config(config, waypoints, behavior_routes)
+
+    def _validate_random_navigation_config(
+        self,
+        config: dict,
+        waypoints: dict,
+        behavior_routes: dict,
+    ) -> None:
+        """Validate random_navigation_behaviors, region/bounds, and exclusions."""
+        random_behaviors = config.get("random_navigation_behaviors")
+        random_bounds = config.get("random_navigation_bounds")
+        random_region = config.get("random_navigation_region")
+        random_exclude = config.get("random_navigation_exclude_waypoints")
+
+        # All are optional together; skip if none present.
+        if (
+            random_behaviors is None
+            and random_bounds is None
+            and random_region is None
+            and random_exclude is None
+        ):
+            return
+
+        # random_navigation_behaviors is always required when any config present.
+        if random_behaviors is None:
+            self._errors.append(
+                "navigation_waypoints.yaml: "
+                "random_navigation_behaviors is required when random "
+                "navigation config is present"
+            )
+            return
+
+        # Either random_navigation_region or random_navigation_bounds required.
+        if random_region is None and random_bounds is None:
+            self._errors.append(
+                "navigation_waypoints.yaml: "
+                "either random_navigation_region or "
+                "random_navigation_bounds is required"
+            )
+            return
+
+        # Validate random_navigation_behaviors.
+        if not isinstance(random_behaviors, list):
+            self._errors.append(
+                "navigation_waypoints.yaml: "
+                "random_navigation_behaviors must be a list"
+            )
+        else:
+            for name in random_behaviors:
+                if not isinstance(name, str):
+                    self._errors.append(
+                        "navigation_waypoints.yaml: "
+                        f"random_navigation_behaviors contains non-string: "
+                        f"{name!r}"
+                    )
+                elif name not in self.behavior_tree_templates:
+                    self._errors.append(
+                        "navigation_waypoints.yaml: unknown behavior in "
+                        f"random_navigation_behaviors: {name!r}"
+                    )
+                elif name in behavior_routes:
+                    self._errors.append(
+                        "navigation_waypoints.yaml: behavior "
+                        f"{name!r} in both random_navigation_behaviors "
+                        "and behavior_routes"
+                    )
+
+        # Validate random_navigation_region (polygon, preferred).
+        if random_region is not None:
+            self._validate_random_navigation_region(random_region)
+
+        # Validate random_navigation_bounds (legacy rectangle).
+        if random_bounds is not None:
+            self._validate_random_navigation_bounds(random_bounds)
+
+        # Validate random_navigation_exclude_waypoints.
+        if random_exclude is not None:
+            if not isinstance(random_exclude, list):
+                self._errors.append(
+                    "navigation_waypoints.yaml: "
+                    "random_navigation_exclude_waypoints must be a list"
+                )
+            else:
+                for wpt_name in random_exclude:
+                    if not isinstance(wpt_name, str):
+                        self._errors.append(
+                            "navigation_waypoints.yaml: "
+                            "random_navigation_exclude_waypoints "
+                            f"contains non-string: {wpt_name!r}"
+                        )
+                    elif wpt_name not in waypoints:
+                        self._errors.append(
+                            "navigation_waypoints.yaml: unknown waypoint "
+                            "in random_navigation_exclude_waypoints: "
+                            f"{wpt_name!r}"
+                        )
+
+    def _validate_random_navigation_region(self, region: dict) -> None:
+        """Validate the polygon-based random_navigation_region section."""
+        if not isinstance(region, dict):
+            self._errors.append(
+                "navigation_waypoints.yaml: "
+                "random_navigation_region must be a mapping"
+            )
+            return
+
+        polygon = region.get("polygon")
+        if polygon is None:
+            self._errors.append(
+                "navigation_waypoints.yaml: "
+                "random_navigation_region.polygon is required"
+            )
+            return
+        if not isinstance(polygon, list) or len(polygon) < 3:
+            self._errors.append(
+                "navigation_waypoints.yaml: "
+                "random_navigation_region.polygon must be a list of "
+                "at least 3 [x, y] vertices"
+            )
+            return
+        for i, pt in enumerate(polygon):
+            if not isinstance(pt, (list, tuple)) or len(pt) != 2:
+                self._errors.append(
+                    "navigation_waypoints.yaml: "
+                    f"random_navigation_region.polygon[{i}] must be "
+                    "[x, y]"
+                )
+            elif not all(
+                self._is_finite_number(v) for v in (pt[0], pt[1])
+            ):
+                self._errors.append(
+                    "navigation_waypoints.yaml: "
+                    f"random_navigation_region.polygon[{i}] values "
+                    "must be finite numbers"
+                )
+
+        rule = region.get("rule", {})
+        if not isinstance(rule, dict):
+            self._errors.append(
+                "navigation_waypoints.yaml: "
+                "random_navigation_region.rule must be a mapping"
+            )
+        elif rule.get("generate_random_goal_inside_polygon") is not True:
+            self._errors.append(
+                "navigation_waypoints.yaml: "
+                "random_navigation_region.rule."
+                "generate_random_goal_inside_polygon must be true"
+            )
+
+        # Optional per-region timeout override.
+        region_timeout = region.get("result_timeout_sec")
+        if region_timeout is not None:
+            if not self._is_finite_number(region_timeout):
+                self._errors.append(
+                    "navigation_waypoints.yaml: "
+                    "random_navigation_region.result_timeout_sec "
+                    "must be a finite number"
+                )
+            elif float(region_timeout) <= 0.0:
+                self._errors.append(
+                    "navigation_waypoints.yaml: "
+                    "random_navigation_region.result_timeout_sec "
+                    "must be > 0"
+                )
+
+    def _validate_random_navigation_bounds(self, bounds: dict) -> None:
+        """Validate the legacy rectangular bounds section."""
+        if not isinstance(bounds, dict):
+            self._errors.append(
+                "navigation_waypoints.yaml: "
+                "random_navigation_bounds must be a mapping"
+            )
+            return
+        for key in ("x_min", "x_max", "y_min", "y_max"):
+            value = bounds.get(key)
+            if not self._is_finite_number(value):
+                self._errors.append(
+                    "navigation_waypoints.yaml: "
+                    f"random_navigation_bounds.{key} must be a "
+                    "finite number"
+                )
+        if (
+            self._is_finite_number(bounds.get("x_min"))
+            and self._is_finite_number(bounds.get("x_max"))
+            and float(bounds["x_min"]) >= float(bounds["x_max"])
+        ):
+            self._errors.append(
+                "navigation_waypoints.yaml: "
+                "random_navigation_bounds.x_min must be < x_max"
+            )
+        if (
+            self._is_finite_number(bounds.get("y_min"))
+            and self._is_finite_number(bounds.get("y_max"))
+            and float(bounds["y_min"]) >= float(bounds["y_max"])
+        ):
+            self._errors.append(
+                "navigation_waypoints.yaml: "
+                "random_navigation_bounds.y_min must be < y_max"
+            )
+
+    def _validate_sound_config(self) -> None:
+        """Validate bark sound configuration (optional)."""
+        config = self.sound_config
+        if not config:
+            return  # optional, not required
+
+        if not isinstance(config, dict):
+            self._errors.append(
+                "sound_config.yaml: bark_sound must be a mapping"
+            )
+            return
+
+        if not isinstance(config.get("enabled"), bool):
+            self._errors.append(
+                "sound_config.yaml: bark_sound.enabled must be boolean"
+            )
+
+        file_path = config.get("file", "")
+        if not isinstance(file_path, str) or not file_path.strip():
+            self._errors.append(
+                "sound_config.yaml: bark_sound.file must be a non-empty "
+                "string"
+            )
+
+        behaviors = config.get("voice_command_behaviors")
+        if not isinstance(behaviors, list) or not behaviors:
+            self._errors.append(
+                "sound_config.yaml: bark_sound.voice_command_behaviors "
+                "must be a non-empty list"
+            )
+        else:
+            for name in behaviors:
+                if not isinstance(name, str):
+                    self._errors.append(
+                        "sound_config.yaml: "
+                        "bark_sound.voice_command_behaviors contains "
+                        f"non-string: {name!r}"
+                    )
+                elif name not in self.behavior_tree_templates:
+                    self._errors.append(
+                        "sound_config.yaml: unknown behavior in "
+                        f"bark_sound.voice_command_behaviors: {name!r}"
+                    )
+
+    def _validate_wake_orientation_config(self) -> None:
+        config = self.wake_orientation_config
+        if not config:
+            return
+
+        if not isinstance(config.get("enabled"), bool):
+            self._errors.append(
+                "wake_orientation.yaml: enabled must be boolean"
+            )
+
+        action_name = config.get("action_name")
+        if not isinstance(action_name, str) or not action_name.startswith("/"):
+            self._errors.append(
+                "wake_orientation.yaml: action_name must be an absolute "
+                "ROS action name"
+            )
+
+        frame_id = config.get("required_frame_id")
+        if not isinstance(frame_id, str) or not frame_id.strip():
+            self._errors.append(
+                "wake_orientation.yaml: required_frame_id must be non-empty"
+            )
+
+        for key in (
+            "server_timeout_sec",
+            "result_timeout_sec",
+            "time_allowance_sec",
+        ):
+            value = config.get(key)
+            if not self._is_finite_number(value) or float(value) <= 0.0:
+                self._errors.append(
+                    f"wake_orientation.yaml: {key} must be > 0"
+                )
+
+        offset = config.get("angle_zero_offset_deg")
+        if not self._is_finite_number(offset):
+            self._errors.append(
+                "wake_orientation.yaml: angle_zero_offset_deg must be finite"
+            )
+
+        direction = config.get("angle_direction_sign")
+        if (
+            not self._is_finite_number(direction)
+            or float(direction) == 0.0
+        ):
+            self._errors.append(
+                "wake_orientation.yaml: angle_direction_sign must be "
+                "finite and non-zero"
+            )
+
+        deadband = config.get("angle_deadband_deg")
+        if (
+            not self._is_finite_number(deadband)
+            or not 0.0 <= float(deadband) < 180.0
+        ):
+            self._errors.append(
+                "wake_orientation.yaml: angle_deadband_deg must be within "
+                "[0, 180)"
+            )
+
+        routes = self.controller_routes.get("routes", {})
+        if routes.get("ACT_INTERACT_RESPOND_CALL") != "wake_orientation":
+            self._errors.append(
+                "ACT_INTERACT_RESPOND_CALL controller route must be "
+                "'wake_orientation'"
+            )
+
+    @staticmethod
+    def _is_finite_number(value: Any) -> bool:
+        return (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value))
+        )
 
     # ── Accessors ─────────────────────────────────────────────────────────
 
     def get_behavior_template(self, name: str) -> dict[str, Any] | None:
-        return self.behavior_templates.get(name)
+        """Return a behavior-tree template by exact direct name."""
+        return self.behavior_tree_templates.get(name)
+
+    def get_all_behavior_templates(self) -> dict[str, Any]:
+        """Return the strict behavior-tree contract."""
+        return dict(self.behavior_tree_templates)
+
+    def get_behavior_names(self) -> set[str]:
+        """Return all directly executable behavior names."""
+        return set(self.get_all_behavior_templates())
 
     def get_action_config(self, unit_id: str) -> dict[str, Any]:
         return self.action_catalog.get(unit_id, {})
 
-    def get_emotion_pool(
-        self, behavior: str, level: str, mode: str,
-    ) -> list[dict[str, Any]]:
-        pools = self.emotion_pools
-        try:
-            return pools[behavior][level.upper()][mode]
-        except (KeyError, TypeError):
-            return []
-
-    def get_object_pool(self, category: str) -> list[dict[str, Any]]:
-        return self.object_pools.get(category, [])
+    def get_controller_routes(self) -> dict[str, str]:
+        return dict(self.controller_routes.get("routes", {}))

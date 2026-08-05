@@ -13,7 +13,9 @@
 
   <depend>rclpy</depend>
   <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
   <depend>action_msgs</depend>
+  <depend>nav2_msgs</depend>
 
   <!--
     Public interface dependency: ExecuteBehavior.action will eventually

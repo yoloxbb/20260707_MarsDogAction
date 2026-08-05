@@ -28,12 +28,13 @@ float64 timeout_sec        # Max execution time
 string  goal_id
 string  behavior_id
 string  behavior_name
-string  status             # SUCCESS / FAILURE / CANCELED / TIMEOUT
+string  status             # SUCCESS / FAILURE / FAILED / CANCELED / TIMEOUT
 string  result             # completed / canceled / timeout
 string  reason
 float64 reward
 string  emotion_delta_json
 string  need_delta_json
+string  metadata_json     # JSON-encoded dynamic metadata (e.g. {"energyValue":88})
 ---
 # ── Feedback ──────────────────────────────────────────────────────────
 string  goal_id
@@ -42,5 +43,5 @@ string  behavior_name
 string  status             # RUNNING
 float64 progress           # 0.0 - 1.0
 bool    safe_to_interrupt
-string  current_action     # Current action ID (e.g. ACT_TAIL_WAG_FAST)
+string  current_action     # Exact action ID from the current behavior-tree table
 string  message            # Human-readable description

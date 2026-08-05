@@ -1,587 +1,238 @@
-# MarsDog Action Executor — 架构与通信设计 (v2)
+# MarsDog Action Executor 架构
 
-## 目录
+## 1. 职责边界
 
-1. [系统架构](#1-系统架构)
-2. [请求处理管道](#2-请求处理管道)
-3. [核心模块](#3-核心模块)
-4. [数据模型](#4-数据模型)
-5. [配置体系](#5-配置体系)
-6. [执行单元系统](#6-执行单元系统)
-7. [条件与过滤](#7-条件与过滤)
-8. [姿态与中断管理](#8-姿态与中断管理)
-9. [行为成功条件](#9-行为成功条件)
-10. [与行为树通信](#10-与行为树通信)
-11. [场景详解](#11-场景详解)
-12. [扩展指南](#12-扩展指南)
+本包是行为执行器，不负责行为决策。上游行为树选择一个
+`behavior_name`；本包根据新动作对照表选择并执行对应 `ACT_*`。
 
----
-
-## 1. 系统架构
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│                      marsdog_interfaces                      │
-│                  (公共接口定义，纯 action/msg)                  │
-└──────────────────────┬───────────────────────────────────────┘
-                       │  import ExecuteBehavior
-          ┌────────────┴────────────┐
-          ▼                         ▼
-┌─────────────────────┐   ┌─────────────────────────────────┐
-│  marsdog_behavior   │   │   marsdog_action_executor       │
-│  (Action Client)    │   │   (Action Server)               │
-│                     │   │                                 │
-│  行为决策            │   │  ┌──────────────────────────┐  │
-│  情绪/需求仲裁        │   │  │     Action Server        │  │
-│  候选池管理           │   │  └──────────┬───────────────┘  │
-│  语音命令处理         │   │             │                  │
-│                     │   │  ┌──────────▼───────────────┐  │
-│                     │   │  │      GoalParser          │  │
-│                     │   │  │  params_json → Context   │  │
-│                     │   │  └──────────┬───────────────┘  │
-│                     │   │             │                  │
-│                     │   │  ┌──────────▼───────────────┐  │
-│                     │   │  │   BehaviorResolver       │  │
-│                     │   │  │  alias / inject / fallback│  │
-│                     │   │  └──────────┬───────────────┘  │
-│                     │   │             │                  │
-│                     │   │  ┌──────────▼───────────────┐  │
-│                     │   │  │    StageExecutor         │  │
-│                     │   │  │  filter → select → exec  │  │
-│                     │   │  └──────────┬───────────────┘  │
-│                     │   │             │                  │
-│                     │   │  ┌──────────▼───────────────┐  │
-│                     │   │  │   Controller Adapters    │  │
-│                     │   │  │  motion/gimbal/audio/... │  │
-│                     │   │  └──────────────────────────┘  │
-└─────────────────────┘   └─────────────────────────────────┘
-          │                            │
-          │   /execute_behavior        │
-          └──────── Action ────────────┘
+```text
+marsdog_behavior
+  Behavior Tree / Action Client
+           │ ExecuteBehavior
+           ▼
+marsdog_action_executor
+  strict name validation
+  stage selection
+  action execution
+           │ ACT_*
+           ▼
+controller / simulator
 ```
 
----
+## 2. 严格配置边界
 
-## 2. 请求处理管道
+### 行为
 
-```
-ROS2 Action Goal
-  │  goal_id, behavior_id, behavior_name, priority_level, params_json, timeout_sec
-  ▼
-┌─────────────────────────────────────────────────────────────┐
-│ 1. GoalParser.parse_from_ros_goal(goal_request)             │
-│    → ExecutionContext.from_goal(behavior_name, params_json) │
-│    → _safe_parse_params (JSON parse, 失败 → is_valid=False) │
-│    → _normalise_level (LOW/MID/HIGH → UPPERCASE)           │
-│    → _normalise_sleep_depth (shallow/deep)                 │
-│    → _normalise_interaction (mode ↔ interactive 互推导)     │
-│    → _normalise_intensity (numeric validation)              │
-│    → _normalise_target (dict check)                         │
-└─────────────────────────┬───────────────────────────────────┘
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│ 2. BehaviorResolver.resolve(ctx)                            │
-│    → ALIAS_MAP lookup (38 entries)                          │
-│    → inject default params (level/interaction_mode/...)     │
-│    → validate canonical name                                │
-│    → interaction fallback (interactive + no target → solo)  │
-│    → level from variant derivation                          │
-└─────────────────────────┬───────────────────────────────────┘
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│ 3. StageExecutor.execute_stage() × N stages                 │
-│    For each Stage:                                          │
-│      a. Read candidates from behavior_templates.yaml        │
-│      b. EligibilityChecker.filter_candidates(ctx)           │
-│         - condition checks (40+ named conditions)           │
-│         - posture validation (from_postures)                │
-│         - safety policy check                               │
-│      c. Select by policy (7 strategies)                     │
-│      d. Execute via UnitExecutor (5 types)                  │
-│      e. PostureManager.apply_unit_to_posture()              │
-│      f. InterruptManager check                              │
-└─────────────────────────┬───────────────────────────────────┘
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│ 4. ResultEvaluator.evaluate(ctx, stage_results)             │
-│    → Check behavior-level success condition                 │
-│    → Build BehaviorResult (JSON-serializable)               │
-│    → Return via Action Server                               │
-└─────────────────────────────────────────────────────────────┘
+唯一运行时行为源：
+
+```text
+config/behavior_tree_actions.yaml
 ```
 
----
+加载后必须恰好得到新表中的 53 个行为。其他 YAML 中存在的历史行为不会进入
+运行时注册表。
 
-## 3. 核心模块
+### 动作
 
-### 3.1 execution_context.py
+唯一运行时动作目录：
 
-`ExecutionContext` — 所有上游参数的统一标准化载体。48 个字段覆盖：
-- 行为名（原始 + 解析后）
-- 来源元数据（source, trigger_event, intent）
-- 优先级（priority_level, sub_priority）
-- 参数（variant, level, intensity, interaction_mode, interactive, target）
-- 上下文（sleep_depth, elimination_type, charger_*, object_category）
-- 运行时（current_stage, current_unit, current_posture, cancel_requested）
-- 缩放（speed/accel/amplitude/duration_scale）
-- 累积（completed_stages, executed_units）
+```text
+config/action_catalog.yaml
+```
 
-**设计原则**：
-- 缺失可选字段 → 默认值，不崩溃
-- 未知字段 → 保留在 metadata
-- 非法值 → warning + 安全默认值
-- `is_valid=False` 时 read `.error_reason`
+该文件只包含 `behavior_tree_actions.yaml` 引用的 188 个唯一动作。
+`ConfigLoader` 会校验动作目录和引用集合一致；出现表外动作或缺少引用动作都会
+阻止节点启动。
 
-### 3.2 goal_parser.py
+### 不支持的兼容机制
 
-`GoalParser` — ROS2 Goal → ExecutionContext 的唯一入口。
-- `parse(behavior_name, params_json, seed, priority_level, timeout_sec)`
-- `parse_from_ros_goal(goal_request)` — duck-typing，不依赖 action 类型
+- 不解析旧 behavior alias；
+- 不加载 `behavior_templates.yaml`；
+- 不加载 `behaviors.yaml`；
+- 不从情绪池动态生成候选动作；
+- 不接受新对照表之外的行为；
+- 不暴露新对照表之外的动作。
 
-### 3.3 behavior_resolver.py
+## 3. 请求处理管道
 
-`BehaviorResolver` — 三阶段解析：
-1. **Alias lookup** — 38 条内置映射 + YAML 覆盖
-2. **参数注入** — alias 可注入 `level` / `interaction_mode` 等默认值到 typed fields
-3. **交互回退** — `interactive` + 无 target → `solo`（记录 fallback_reason）
-4. **Level 推导** — 从 `variant` 字符串提取 level
+```text
+ExecuteBehavior.Goal
+        │
+        ▼
+GoalParser
+  params_json -> ExecutionContext
+        │
+        ▼
+BehaviorResolver
+  requested_behavior_name ∈ configured 53?
+        │ yes
+        ▼
+ConfigLoader.get_behavior_template(name)
+        │
+        ▼
+for stage in template.stages
+  cancel / timeout check
+        │
+        ▼
+StageExecutor
+  candidates
+    -> EligibilityChecker
+    -> random_one
+    -> controller route
+       -> AGV adapter / UnitExecutor
+        │
+        ├─ PostureManager update
+        ├─ InterruptManager update
+        └─ executed_units append
+        │
+        ▼
+ResultEvaluator
+  all_required_stages_completed
+```
 
-### 3.4 eligibility_checker.py
+名称校验是精确匹配。无法匹配时：
 
-`EligibilityChecker` — 统一条件系统。
-- 40+ 内置条件（`owner_visible`, `charger_known`, `elimination_type_pee`, ...）
-- `filter_candidates(candidates, ctx)` → eligible list
-- 检查顺序：条件 → 姿态 → 安全策略
-- 未知条件名 → error（启动校验），不静默跳过
+```text
+is_valid = false
+error_reason = "unsupported_behavior: '<name>'"
+```
 
-### 3.5 stage_executor.py
+## 4. 核心模块
 
-`StageExecutor` — 单 Stage 执行引擎。
-- 7 种 selection_policy
-- 调用 `EligibilityChecker` 过滤
-- 调用 `UnitExecutor` 执行
-- 支持 `failure_policy`（abort / skip_stage / retry）
-- 支持 `loop_policy`（loop_random + min/max_loops）
+| 模块 | 职责 |
+|---|---|
+| `goal_parser.py` | ROS Goal / JSON 转 `ExecutionContext` |
+| `behavior_resolver.py` | 严格校验 53 个直接行为名 |
+| `config_loader.py` | 加载新表、校验严格动作目录、启动校验 |
+| `eligibility_checker.py` | 条件、姿态和安全过滤 |
+| `stage_executor.py` | Stage 候选选择和执行 |
+| `adapters/agv_adapter.py` | 精确动作到 `/cmd_vel` Twist 运动组 |
+| `adapters/navigation_adapter.py` | Nav2 点位导航与现有 Stage 动作物理代理 |
+| `interrupt_manager.py` | immediate / safe_point / non_interruptible |
+| `posture_manager.py` | 执行后的姿态状态更新 |
+| `result_evaluator.py` | 行为终态评估 |
+| `ros_node.py` | `/execute_behavior` ROS2 Action Server |
+| `debug_publishers.py` | Goal / Feedback / Result 调试 JSON |
 
-### 3.6 config_loader.py
+## 5. 主要数据结构
 
-`ConfigLoader` — YAML 加载 + 启动校验。
-- 加载 10 个配置文件（部分可选）
-- 15+ 项校验（非法 policy、空 required stage、alias 循环、weight < 0、timeout 异常等）
-- 严重错误 → `ConfigurationError` → 阻止节点启动
+### ExecutionContext
 
----
+| 字段 | 含义 |
+|---|---|
+| `requested_behavior_name` | 上游原始名称 |
+| `resolved_behavior_name` | 严格模式下与 requested 相同 |
+| `params` | 原始 JSON 参数 |
+| `priority_level` | 0–6 |
+| `target` | 可选目标 |
+| `current_stage` | 当前 Stage |
+| `current_unit` | 当前 `ACT_*` |
+| `completed_stages` | 已完成 Stage |
+| `executed_units` | 已成功执行动作 |
+| `is_valid` / `error_reason` | 请求校验状态 |
 
-## 4. 数据模型
-
-### 4.1 BehaviorGoal（上游输入）
-
-| 字段 | 类型 | 来源 |
-|------|------|------|
-| goal_id | str | 行为树 |
-| behavior_id | str | 行为树 |
-| behavior_name | str | 行为树候选池 |
-| priority_level | int | 行为树 |
-| params | dict | params_json 解析 |
-| timeout_sec | float | 行为树 |
-
-### 4.2 ExecutionContext（内部标准化）
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| requested_behavior_name | str | 原始名 |
-| resolved_behavior_name | str | alias 解析后 |
-| source | str\|None | need/emotion/audio |
-| trigger_event | str\|None | NEED_HUNGER_TRIGGERED |
-| intent | str\|None | eat_normal |
-| level | str\|None | LOW/MID/HIGH |
-| interaction_mode | str | solo/interactive |
-| target | dict\|None | {target_type, visible, ...} |
-| sleep_depth | str\|None | shallow/deep |
-| elimination_type | str\|None | pee/poop |
-| current_posture | str | standing/sitting/lying/... |
-
-### 4.3 BehaviorResult（输出）
-
-| 字段 | 说明 |
-|------|------|
-| success | bool |
-| status | success/failure/canceled/timeout/no_eligible_action/... |
-| requested_behavior_name | 原始名 |
-| resolved_behavior_name | canonical 名 |
-| completed_stages | 已完成的 stage_id 列表 |
-| executed_units | 已执行的 unit_id 列表 |
-| result_code | 结果码 |
-| reward | -1.0 ~ 1.0 |
-
----
-
-## 5. 配置体系
-
-| 文件 | 大小 | 职责 |
-|------|------|------|
-| `behavior_templates.yaml` | 989 行 | 22 canonical behavior → Stage 定义 |
-| `action_catalog.yaml` | 2614 行 | 202 执行单元元数据 |
-| `behavior_aliases.yaml` | 181 行 | 38 条 alias + 参数注入 |
-| `emotion_action_pools.yaml` | 125 行 | 6 情绪 × 2-3 level × 2 mode 动作池 |
-| `controller_routes.yaml` | 28 行 | action → adapter 路由 |
-| `safety_policies.yaml` | 11 行 | 10 个高风险动作开关 |
-
-### behavior_templates.yaml 结构
+### Behavior Template
 
 ```yaml
-eatNormally:
-  success_condition: eating_stage_completed
+behavior_name:
+  behavior_name: behavior_name
+  success_condition: all_required_stages_completed
   stages:
-    - stage_id: prepare
+    - stage_id: action
       order: 1
-      required: true
       selection_policy: random_one
+      required: true
       candidates:
-        - {unit_id: ACT_SNIFF_BOWL_EDGE, weight: 1.0}
-        - {unit_id: ACT_PAW_AT_BOWL, weight: 1.0}
-    - stage_id: eating
-      order: 2
-      required: true
-      selection_policy: random_one
-      candidates: [...]
-    - stage_id: interaction
-      order: 3
-      required: false
-      selection_policy: random_one
-      failure_policy: skip_stage
-      candidates:
-        - {unit_id: ACT_PAUSE_AND_LOOK_AT_OWNER, conditions: [owner_visible]}
-    - stage_id: exit
-      order: 4
-      required: true
-      selection_policy: random_one
-      candidates: [...]
+        - {unit_id: ACT_EXAMPLE}
 ```
 
-### action_catalog.yaml 结构
+## 6. 选择与执行
 
-```yaml
-ACT_WAG_TAIL_GENTLY:
-  unit_type: atomic_action
-  controller: motion
-  timeout_sec: 3.0
-  interrupt_policy: safe_point
-  from_postures: [standing, sitting]
-  to_posture: same
-  conditions: []
-  description: "Gently wag tail — low-arousal joy expression"
+新表中的所有 Stage 使用 `random_one`：
 
-ACT_RETURN_TO_CHARGER:
-  unit_type: task
-  controller: navigation_charging
-  timeout_sec: 60.0
-  interrupt_policy: safe_point
-  success_condition: charger_reached
-  failure_conditions: [charger_not_found, path_blocked, timeout]
+1. 读取候选动作；
+2. 过滤不满足执行条件的候选；
+3. 对剩余候选均匀随机选择一个；
+4. 按动作目录元数据创建 UnitExecutor；
+5. 成功后将精确 ID 写入 `executed_units`。
 
-ACT_IGNORE_DOOR:
-  unit_type: policy
-  controller: none
-  interrupt_policy: immediate
-  effect:
-    complete_stage_without_motion: true
+动作 ID 不做改名、归一化或相近动作替换。
 
-ACT_SLOW_MOVEMENT:
-  unit_type: modifier
-  controller: none
-  interrupt_policy: immediate
-  effects:
-    speed_scale: 0.45
-    acceleration_scale: 0.60
-    amplitude_scale: 0.80
+## 7. AGV 路由
+
+`StageExecutor` 现在会读取 `controller_routes.yaml`。路由为 `agv` 时，完整
+`ACT_*` 交给 `AgvMotionAdapter` 执行；AGV 未启用或没有对应适配器时沿用原
+UnitExecutor。
+
+当前只为 13 个直接指令动作启用 AGV 路由。其余运动动作保留给后续导航、
+定位和目标跟随适配器。
+
+```text
+ACT_*
+  -> controller_routes.yaml: agv
+  -> agv_motion_groups.yaml: motion group
+  -> 10Hz geometry_msgs/Twist
+  -> /cmd_vel
 ```
 
----
+AGV 默认关闭。所有运动组结束、取消、紧急停止，以及 ROS context 仍有效的正常
+退出都会发送零速度。底盘仍必须配置速度命令超时看门狗。普通行为串行执行，
+`emergency_stop` 可绕过普通行为锁触发停止。
 
-## 6. 执行单元系统
+启用语义点位导航后，`navigation_waypoints.yaml` 先按 `behavior_name` 选择
+A–E 点位并调用 Nav2；成功到点后，StageExecutor 仍从原行为树候选中选择精确
+`ACT_*`，`BehaviorMobilityAdapter` 再按该动作 ID 选择 Twist 代理。导航与
+Stage Twist 严格串行，取消和急停同时作用于 Nav2 Goal 与 `/cmd_vel`。
 
-### 6.1 五种执行器
+`respond_owner_call` 的 `ACT_INTERACT_RESPOND_CALL` 使用独立
+`wake_orientation` 路由：从 `ExecutionContext.wake_angle_deg` 读取动态声源
+角度，经零点/方向校准后调用 Nav2 `/spin`。它不进入固定 Twist 运动组。
 
-| 类型 | 类 | 行为 |
-|------|-----|------|
-| atomic_action | `AtomicActionExecutor` | Mock: `time.sleep(duration)` |
-| composite_action | `CompositeActionExecutor` | 依次执行子动作 |
-| task | `TaskExecutor` | RUNNING → SUCCESS/FAILURE/TIMEOUT/CANCELED 生命周期 |
-| policy | `PolicyExecutor` | 直接返回 SUCCESS，不调控制器 |
-| modifier | `ModifierExecutor` | 修改 `ctx` 的 scale 参数，不调控制器 |
+## 8. ROS2 可观测性
 
-### 6.2 Task 生命周期
+正式接口：
 
-```
-IDLE → RUNNING → SUCCESS  (条件达成)
-              → FAILURE  (条件失败)
-              → TIMEOUT  (超时)
-              → CANCELED (取消请求)
-```
-
-Mock task: `timeout_sec` 内每 0.1s 检查取消，到达 `duration_scale * 2s` 后返回 SUCCESS。
-
-### 6.3 控制器路由
-
-从 `controller_routes.yaml` 读取，默认 fallback: `motion`。
-
-| 控制器 | Mock 类 | 真实目标 |
-|--------|---------|---------|
-| motion | MockMotionAdapter | `/motion/execute_motion` |
-| gimbal_motion | MockGimbalAdapter | `/gimbal/set_target` |
-| audio | MockAudioAdapter | — |
-| navigation_motion | MockNavigationAdapter | `/navigation/navigate_to` |
-| expression | MockExpressionAdapter | `/expression/play` |
-
----
-
-## 7. 条件与过滤
-
-### 条件检查器
-
-40+ 内置条件，分类：
-
-| 类别 | 条件 |
-|------|------|
-| 目标可见性 | `owner_visible`, `target_visible`, `person_not_visible`, `animal_target_available`, `human_target_available` |
-| 距离 | `person_too_far`, `contact_distance`, `target_distance_valid` |
-| 目标状态 | `target_moving`, `target_not_aggressive` |
-| 充电 | `charger_known`, `charger_available`, `charger_unavailable` |
-| 排泄 | `elimination_type_pee`, `elimination_type_poop` |
-| 物品 | `toy_available`, `carrying_toy`, `object_carryable`, `object_safe_for_mouth` |
-| 资源 | `food_resource_visible`, `food_in_hand_visible`, `rolling_food_detected` |
-| 安全授权 | `jump_interaction_allowed`, `gentle_mouthing_allowed`, `allow_bite_object`, `allow_carry_object`, `allow_rummage_trash`, `allow_scratch_door` |
-| 其他 | `leash_or_shoe_available`, `bell_interaction_supported`, `suitable_rubbing_object_available`, `contact_allowed`, `paw_contact_allowed` |
-
-### 过滤流程
-
-```
-candidates (全部候选)
-  → 条件检查 (named conditions)
-  → 姿态检查 (from_postures)
-  → 安全检查 (safety_policies)
-  → 冷却检查 (cooldown_sec, max_repeat)
-  → eligible (合法候选)
-  → 按 selection_policy 选择
+```text
+/execute_behavior
+marsdog_interfaces/action/ExecuteBehavior
 ```
 
----
+调试接口：
 
-## 8. 姿态与中断管理
-
-### 8.1 PostureManager
-
-8 种姿态: `standing`, `sitting`, `lying`, `lying_side`, `lying_back`, `lying_belly`, `sleep_curled`, `moving`, `unknown`
-
-- `is_posture_valid_for(from_postures)` — 检查 + 转换查询
-- `apply_unit_to_posture(to_posture)` — 执行后更新
-- `unknown` 姿态允许所有动作
-
-### 8.2 InterruptManager
-
-| 策略 | 状态转换 |
-|------|---------|
-| `immediate` | IDLE → CANCEL_REQUESTED → CANCELED（立即） |
-| `safe_point` | IDLE → CANCEL_REQUESTED → 等安全点 → CANCELED |
-| `non_interruptible` | IDLE → CANCEL_REQUESTED → 完成单元 → CANCELED |
-
-Cleanup 流程：停止底盘 → 停止导航 → 停止云台 → 停止音频 → 释放物体 → 清除 Modifier → 安全姿态。
-
----
-
-## 9. 行为成功条件
-
-```yaml
-eatNormally:         eating_stage_completed
-eatExcitedly:        eating_stage_completed
-defecate:            eliminating_stage_completed
-cleanSelf:           groom_stage_completed
-sleepNow:            sleep_pose_entered
-restInPlace:         recover_stage_completed
-recharge:            charging_detected
-testAnimalBoundary:  express_stage_completed
-greetAnimal:         greet_stage_completed
-inviteAnimalToPlay:  invite_stage_completed
-requestResourceFromHuman: request_stage_completed
-seekHumanInteraction:     interact_stage_completed
-inviteHumanToPlay:        invite_stage_completed
-exploreRoom:              explore_stage_completed
-inspectObject:            inspect_stage_completed
-expressCalm:         at_least_one_expression
-expressJoy:          at_least_one_expression
-# ... (all 6 express* use at_least_one_expression)
+```text
+/debug/execute_behavior/goal
+/debug/execute_behavior/feedback
+/debug/execute_behavior/result
 ```
 
----
+Feedback 每个 Stage 完成后发布一次。`current_action` 是该 Stage 选择的精确
+动作 ID。仿真页面细节见
+[SIMULATION_PAGE_INTEGRATION.md](SIMULATION_PAGE_INTEGRATION.md)。
 
-## 10. 与行为树通信
+AGV 细节见 [AGV_ROS2_INTEGRATION.md](AGV_ROS2_INTEGRATION.md)。
 
-### Action 字段
+## 9. 启动校验
 
-```
-Goal:     goal_id, behavior_id, behavior_name, priority_level, params_json, timeout_sec
-Result:   goal_id, behavior_id, behavior_name, status, result, reason, reward, emotion_delta_json, need_delta_json
-Feedback: goal_id, behavior_id, behavior_name, status, progress, safe_to_interrupt, current_action, message
-```
+`ConfigLoader.load_all()` 会检查：
 
-### params_json 契约
+- 行为存在非空 Stage；
+- Stage order 不重复；
+- `selection_policy` 合法；
+- required Stage 候选不为空；
+- 每个候选动作存在于动作目录；
+- 动作目录没有新表之外的动作；
+- `unit_type`、`interrupt_policy`、timeout、weight 合法。
+- AGV 动作、运动组、controller route 三方一致；
+- AGV 频率、速度和时长字段合法。
 
-行为树下发的 `params_json` 示例：
+## 10. 扩展流程
 
-```json
-{
-  "source": "need",
-  "trigger_event": "NEED_HUNGER_TRIGGERED",
-  "intent": "eat_normal",
-  "priority_level": 3,
-  "level": "TRIGGERED",
-  "intensity": 82,
-  "interaction_mode": "solo"
-}
-```
+增加行为：
 
-情绪示例：
+1. 在 `behavior_tree_actions.yaml` 增加行为和 Stage；
+2. 在 `action_catalog.yaml` 注册新增动作，并保证不保留未引用动作；
+3. 更新行为契约测试的期望名称和映射摘要；
+4. 同步仿真页面动作资源；
+5. 运行测试。
 
-```json
-{
-  "source": "emotion",
-  "trigger_event": "EMO_JOY_MID",
-  "intent": "express_joy",
-  "level": "MID",
-  "interaction_mode": "interactive",
-  "target": {"target_type": "human", "identity": "owner", "visible": true}
-}
-```
-
----
-
-## 11. 场景详解
-
-### 11.1 需求触发 → eatNormally
-
-```
-行为树下发: behavior_name="eatNormally"
-           params_json={"source":"need","trigger_event":"NEED_HUNGER_TRIGGERED","level":"TRIGGERED"}
-
-GoalParser → ExecutionContext(
-    requested_behavior_name="eatNormally",
-    source="need",
-    level="TRIGGERED",
-    interaction_mode="solo", ...
-)
-
-BehaviorResolver → canonical="eatNormally" (no alias)
-
-StageExecutor:
-  Stage prepare: filter → eligible=[ACT_SNIFF_BOWL_EDGE, ACT_PAW_AT_BOWL, ACT_SIT_OR_LIE_BY_BOWL]
-                 random_one → ACT_PAW_AT_BOWL → AtomicActionExecutor → SUCCESS
-  Stage eating:   filter → eligible=[ACT_LICK_FOOD, ACT_CHEW_OR_CARRY_FOOD, ...]
-                 random_one → ACT_LICK_FOOD → SUCCESS
-  Stage interaction(optional): filter → ACT_PAUSE_AND_LOOK_AT_OWNER needs owner_visible → False
-                               → ACT_CHASE_ROLLING_FOOD needs rolling_food_detected → False
-                               → eligible=[ACT_CHANGE_POSTURE, ACT_GROWL_WHILE_EATING, ACT_BURP]
-                               random_one → ACT_BURP → SUCCESS
-  Stage exit:     random_one → ACT_LICK_LIPS_OR_NOSE → SUCCESS
-
-ResultEvaluator → eating_stage_completed=True → SUCCESS
-```
-
-### 11.2 情绪 + alias: wagTailFast → expressJoy
-
-```
-行为树下发: behavior_name="wagTailFast"
-           params_json={}
-
-GoalParser → ExecutionContext(requested="wagTailFast", level=None, interaction_mode="solo")
-
-BehaviorResolver:
-  alias lookup → "wagTailFast" → resolved="expressJoy"
-  inject → level="MID", interaction_mode="interactive"
-  typed fields → ctx.level="MID", ctx.interaction_mode="interactive"
-  fallback → ctx.interaction_mode="interactive" + no target → "solo"
-  log: "interaction fallback: no valid target, requested=interactive → resolved=solo"
-
-StageExecutor:
-  从 emotion_action_pools.yaml 查 expressJoy/MID/solo:
-    → [ACT_STEP_EXCITEDLY_IN_PLACE, ACT_SWAY_BODY_WITH_WAGGING_TAIL]
-  random_one → ACT_STEP_EXCITEDLY_IN_PLACE → SUCCESS
-
-ResultEvaluator → at_least_one_expression=True → SUCCESS
-```
-
-### 11.3 充电: recharge
-
-```
-行为树下发: behavior_name="recharge"
-           params_json={"charger_known":true,"charger_available":true}
-
-EligibilityChecker:
-  condition_first:
-    ACT_RETURN_TO_CHARGER → charger_known=True ✓, charger_available=True ✓ → selected
-    ACT_BARK_AND_LIE_DOWN_IF_NO_CHARGER → charger_unavailable=False → skipped
-
-TaskExecutor(ACT_RETURN_TO_CHARGER):
-  RUNNING → ... → SUCCESS (charger_reached)
-  ctx.metadata["charging_detected"] = True
-
-ResultEvaluator → charging_detected=True → SUCCESS
-```
-
----
-
-## 12. 扩展指南
-
-### 添加新 canonical behavior
-
-1. 在 `config/behavior_templates.yaml` 添加 behavior 定义
-2. 在 `behavior_resolver.py` 的 `_CANONICAL_BEHAVIORS` 集合中注册
-3. 如需行为级成功条件，在 `result_evaluator.py` 的 `BEHAVIOR_SUCCESS_CONDITIONS` 中添加
-
-### 添加新 action unit
-
-1. 在 `config/action_catalog.yaml` 添加 unit 元数据
-2. 如需特定 controller，在 `config/controller_routes.yaml` 添加路由
-3. 如需安全授权，在 `config/safety_policies.yaml` 添加开关
-
-### 添加新条件
-
-1. 在 `eligibility_checker.py` 实现 `_cond_*` 函数
-2. 调用 `register_condition("condition_name", _cond_*)` 注册
-3. 在 behavior templates 的 `conditions` 列表中使用
-
-### 添加旧行为别名
-
-在 `config/behavior_aliases.yaml` 添加：
-
-```yaml
-old_name:
-  resolved_behavior_name: canonical_name
-  injected_params:
-    level: MID
-    interaction_mode: interactive
-  alias_reason: "migration from legacy naming"
-```
-
----
-
-## 附录：关键文件索引
-
-| 文件 | 行数 | 职责 |
-|------|------|------|
-| `execution_context.py` | ~280 | ExecutionContext + 参数标准化 |
-| `goal_parser.py` | ~65 | GoalParser |
-| `behavior_resolver.py` | ~210 | alias + inject + fallback |
-| `eligibility_checker.py` | ~230 | 40+ 条件 + 过滤 |
-| `stage_executor.py` | ~180 | 7 种策略 + 5 种执行单元 |
-| `units/unit_executors.py` | ~200 | 5 种 UnitExecutor |
-| `units/base_unit_executor.py` | ~65 | UnitState + UnitResult |
-| `posture_manager.py` | ~70 | 姿态状态机 |
-| `interrupt_manager.py` | ~110 | 3 种中断策略 |
-| `result_evaluator.py` | ~160 | 行为成功条件 |
-| `config_loader.py` | ~200 | YAML 加载 + 15 项校验 |
-| `adapters/mock_adapters.py` | ~95 | 6 种 Mock adapter |
-| `config/action_catalog.yaml` | 2614 | 202 执行单元 |
-| `config/behavior_templates.yaml` | 989 | 22 canonical behavior |
-| `config/behavior_aliases.yaml` | 181 | 38 条 alias |
-| `config/emotion_action_pools.yaml` | 125 | 6 情绪动作池 |
+不要通过添加 alias、旧模板或隐式动作替换扩展接口。

@@ -1,0 +1,1 @@
+/home/cat/xbb/20260707_MarsDogAction/build/marsdog_action_executor/rosidl_typesupport_introspection_c/marsdog_action_executor/msg/rosidl_typesupport_introspection_c__visibility_control.h

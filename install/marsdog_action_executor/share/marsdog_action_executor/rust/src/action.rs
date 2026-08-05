@@ -1,0 +1,1 @@
+/home/cat/xbb/20260707_MarsDogAction/build/marsdog_action_executor/rosidl_generator_rs/marsdog_action_executor/rust/src/action.rs

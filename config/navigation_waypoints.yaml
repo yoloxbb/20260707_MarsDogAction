@@ -1,0 +1,190 @@
+enabled: false
+action_name: /navigate_to_pose
+frame_id: map
+server_timeout_sec: 10.0
+result_timeout_sec: 300.0
+waypoints:
+  A:
+    label: sleep
+    x: -0.847
+    y: -0.423
+    orientation_z: 0.988
+    orientation_w: -0.155
+  B:
+    label: charging
+    x: -3.025
+    y: -1.709
+    orientation_z: 0.996
+    orientation_w: -0.087
+  C:
+    label: food
+    x: -2.459
+    y: 1.806
+    orientation_z: 0.161
+    orientation_w: 0.987
+  D:
+    label: toilet
+    x: -4.197
+    y: 2.982
+    orientation_z: 0.149
+    orientation_w: 0.989
+  E:
+    label: cleaning
+    x: -1.144
+    y: 4.43
+    orientation_z: -0.599
+    orientation_w: 0.801
+action_motion_groups:
+  ACT_CIRCLE_AROUND: approach_stop
+  ACT_SCRATCH_BED_OR_GROUND: approach_stop
+  ACT_STRETCH_BODY: approach_stop
+  ACT_YAWN: turn_right_4s
+  ACT_SPLoot_LIE_DOWN: approach_stop
+  ACT_LICK_FUR_OR_PAWS: approach_stop
+  ACT_SLEEP_CURLED_UP: strafe_left_turn_right
+  ACT_SLEEP_ON_STOMACH: strafe_left_turn_right
+  ACT_SLEEP_ON_SIDE_CURLED_UP: strafe_left_turn_right
+  ACT_SLEEP_ON_SIDE: strafe_left_turn_right
+  ACT_SLEEP_ON_BACK: strafe_left_turn_right
+  ACT_FLIP_BODY: strafe_right_turn_left
+  ACT_WHINE_SOFTLY: strafe_right_turn_left
+  ACT_TWITCH_OR_KICK_LEGS: strafe_right_turn_left
+  ACT_GETUP_CRAWL: backward_1s
+  ACT_GETUP_ROLL: backward_1s
+  ACT_GETUP_BOUNCE: backward_1s
+  ACT_GETUP_STRETCH: backward_1s
+  ACT_GETUP_SIT: backward_1s
+  ACT_SLOW_DOWN_IN_RESPONSE_TO_OWNER: turn_right_2s
+  ACT_RETURN_TO_DOG_BED_FOR_CHARGING: turn_right_2s
+  ACT_LICK_PAWS_OR_FUR: strafe_osc_2s
+  ACT_RUB_BODY_AGAINST_OBJECT: strafe_osc_2s
+  ACT_PAW_AT_MUZZLE: strafe_osc_2s
+  ACT_SHAKE_OFF_WATER: strafe_osc_2s
+  ACT_SCRATCH_EAR_WITH_HIND_LEG: strafe_osc_2s
+  ACT_LOWER_HEAD_AND_APPROACH_BOWL: approach_stop
+  ACT_LICK_FOOD: forward_left_2s
+  ACT_CHEW_OR_CARRY_FOOD: forward_left_2s
+  ACT_SCRATCH_FOOD: forward_left_2s
+  ACT_PAUSE_AND_LOOK_AT_OWNER: backward_right_2s
+  ACT_CHANGE_POSTURE: backward_right_2s
+  ACT_BURP: backward_right_2s
+  ACT_LICK_LIPS_OR_NOSE: forward_backward_2s
+  ACT_SHAKE_HEAD: forward_backward_2s
+  ACT_WALK_AWAY_OR_LIE_DOWN: forward_backward_2s
+  ACT_SNIFF_GROUND_FOR_CRUMBS: forward_backward_2s
+  ACT_LICK_AND_SWALLOW: forward_left_2s
+  ACT_SNIFF_GROUND_FOR_CRUMBS_AND_LEAVE: backward_right_2s
+  ACT_LICK_LIPS_OR_NOSE_AND_LEAVE: backward_right_2s
+  ACT_CARRY_BOWL_AND_FOLLOW_OWNER: forward_left_2s
+  ACT_PAW_AT_BOWL_FOR_FOOD: forward_left_2s
+  ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD: forward_left_2s
+  ACT_PAW_AT_BOWL_AND_WAIT_FOR_FOOD: forward_left_2s
+  ACT_SNIFF_BOWL_RIM_AND_WAIT_FOR_FOOD: forward_left_2s
+  ACT_WHINE_AND_WAIT_FOR_FOOD: forward_left_2s
+  ACT_VISUALLY_TRACK_FOOD_IN_HAND: forward_turn_osc_3s
+  ACT_CIRCLE_AROUND_OWNER: forward_turn_osc_3s
+  ACT_STAND_UP_AND_PAW_AT_OWNER_LEG: forward_turn_osc_3s
+  ACT_SPIN_IN_PLACE: forward_turn_osc_3s
+  ACT_SNIFF_AND_CIRCLE_AT_TOILET_SPOT: approach_stop
+  ACT_SQUAT_AND_ELIMINATE: turn_left_2s
+  ACT_SCRATCH_SOIL_OR_GROUND: turn_right_2s
+  ACT_SNIFF_EXCREMENT: turn_right_2s
+  ACT_WALK_AWAY_OR_SHAKE_HEAD: turn_right_2s
+  ACT_RETURN_TO_CHARGER: turn_right_2s
+  ACT_BARK_AND_LIE_DOWN_IF_NO_CHARGER: turn_right_2s
+# Behaviors that navigate to a random point before executing their stages.
+# Excludes internal-need waypoints A–E (sleep, charging, food, toilet, cleaning).
+random_navigation_behaviors:
+  - expressCalmWithHuman
+  - expressCalmAlone
+  - expressJoyWithHuman
+  - expressJoyAlone
+  - expressCuriosityWithHuman
+  - expressCuriosityAlone
+  - expressExcitementWithHuman
+  - expressExcitementAlone
+  - expressAnxietyWithHuman
+  - expressAnxietyAlone
+  - expressFearWithHuman
+  - expressFearAlone
+
+# Navigable-area polygon for random pose generation (map frame).
+# Points are sampled uniformly inside the polygon using triangle-area weighting.
+random_navigation_region:
+  polygon:
+    - [-0.215, -0.651]
+    - [-3.627, -1.788]
+    - [-4.682, 3.105]
+    - [-1.334, 4.416]
+  rule:
+    generate_random_goal_inside_polygon: true
+  # Shorter timeout for random navigation within the small polygon.
+  # Falls back to result_timeout_sec when not set.
+  result_timeout_sec: 45.0
+
+# Fixed waypoints to exclude from random generation.
+random_navigation_exclude_waypoints:
+  - A
+  - B
+  - C
+  - D
+  - E
+
+behavior_routes:
+  sleepOnSide:
+    waypoint: A
+    stages:
+    - prepare
+    - sleep_pose
+    - sleeping
+    - wakeup
+  sleepNow:
+    waypoint: A
+    stages:
+    - prepare
+    - sleep_pose
+    - sleeping
+    - wakeup
+  restInPlace:
+    waypoint: B
+    stages:
+    - recover
+  recharge:
+    waypoint: B
+    stages:
+    - recharge
+  eatNormally:
+    waypoint: C
+    stages:
+    - prepare
+    - eating
+    - interaction
+    - exit
+  eatExcitedly:
+    waypoint: C
+    stages:
+    - prepare
+    - eating
+    - exit
+  seekFood:
+    waypoint: C
+    stages:
+    - seek_food
+  seekFoodUrgently:
+    waypoint: C
+    stages:
+    - seek_food
+  inspectDogFood:
+    waypoint: C
+    stages:
+    - inspect
+  barkShortAlert:
+    waypoint: D
+    stages:
+    - prepare
+    - action
+    - exit
+  lickPaws:
+    waypoint: E
+    stages:
+    - groom

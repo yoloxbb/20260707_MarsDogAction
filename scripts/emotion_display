@@ -1,0 +1,11 @@
+#!/usr/bin/python3
+"""Launcher script for the MarsDog emotion display window.
+
+Uses /usr/bin/python3 explicitly to avoid venv Python (which lacks tkinter
+and other ROS2 transitive dependencies).
+"""
+
+from marsdog_action_executor.emotion_display import main
+
+if __name__ == "__main__":
+    main()

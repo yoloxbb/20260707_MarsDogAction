@@ -27,12 +27,20 @@ setup(
             os.path.join("share", package_name, "config"),
             glob("config/*.yaml"),
         ),
+        # Emotion/behavior visualization assets
+        (
+            os.path.join(
+                "share", package_name, "config", "emotion_images"
+            ),
+            glob("config/emotion_images/*"),
+        ),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
     entry_points={
         "console_scripts": [
             "action_executor_node = marsdog_action_executor.node:main",
+            "emotion_display = marsdog_action_executor.emotion_display:main",
         ],
     },
 )

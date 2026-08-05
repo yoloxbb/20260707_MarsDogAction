@@ -1,4163 +1,1550 @@
-# MarsDog Action Catalog — Complete YAML Representation
-#
-# Defines every executable action unit used by the action executor.
-# Each unit maps to a controller adapter and carries posture/condition
-# constraints that the planner and executor enforce at runtime.
-#
-# Fields:
-#   unit_id            — canonical action identifier (ACT_<CATEGORY>_<DESCRIPTION>)
-#   unit_type          — atomic_action | composite_action | task | policy | modifier
-#   controller         — motion | posture | head | tail | mouth | paw | vocal | ear |
-#                         gimbal | nav | expression | audio | composite | meta
-#   timeout_sec        — default maximum duration before automatic abort
-#   interrupt_policy   — safe | unsafe | deferred (can only interrupt at stage boundary)
-#   from_postures      — list of posture IDs this action can start from
-#   to_posture         — expected posture after completion ("" if unchanged)
-#   conditions         — constraints dict (battery_min, emotion_level, object_nearby, etc.)
-#   description        — human-readable summary of what this action does
-
 action_units:
-
-  # ╔════════════════════════════════════════════════════════════════════════════╗
-  # ║  SECTION A: Eating-related actions                                       ║
-  # ╚════════════════════════════════════════════════════════════════════════════╝
-
-  # ── ACT_SNIFF_BOWL_EDGE ────────────────────────────────────────────────────
-  ACT_SNIFF_BOWL_EDGE:
-    unit_id: ACT_SNIFF_BOWL_EDGE
+  ACT_LOWER_HEAD_AND_APPROACH_BOWL:
+    unit_id: ACT_LOWER_HEAD_AND_APPROACH_BOWL
     unit_type: atomic_action
-    controller: head
-    timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: standing
-    conditions: { food_bowl_nearby: true, max_distance_m: 1.5 }
-    description: "Lower head to sniff the edge and rim of the food or water bowl."
-
-  # ── ACT_PAW_AT_BOWL ────────────────────────────────────────────────────────
-  ACT_PAW_AT_BOWL:
-    unit_id: ACT_PAW_AT_BOWL
-    unit_type: atomic_action
-    controller: paw
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: standing
-    conditions: { food_bowl_nearby: true, max_distance_m: 0.8 }
-    description: "Reach out with one front paw and tap or nudge the food bowl."
-
-  # ── ACT_SIT_OR_LIE_BY_BOWL ─────────────────────────────────────────────────
-  ACT_SIT_OR_LIE_BY_BOWL:
-    unit_id: ACT_SIT_OR_LIE_BY_BOWL
-    unit_type: composite_action
-    controller: posture
     timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: lying
-    conditions: { food_bowl_nearby: true, max_distance_m: 1.0 }
-    description: "Choose between sitting or lying down next to the food bowl and wait."
-
-  # ── ACT_LICK_FOOD ──────────────────────────────────────────────────────────
+    interrupt_policy: safe_point
   ACT_LICK_FOOD:
     unit_id: ACT_LICK_FOOD
     unit_type: atomic_action
     controller: mouth
     timeout_sec: 6.0
-    interrupt_policy: unsafe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { food_in_bowl: true, max_distance_m: 0.5 }
-    description: "Extend tongue to lick food or water from the bowl repeatedly."
-
-  # ── ACT_CHEW_OR_CARRY_FOOD ─────────────────────────────────────────────────
+    interrupt_policy: non_interruptible
+    from_postures:
+    - standing
+    - sitting
+    to_posture: ''
+    conditions:
+      food_in_bowl: true
+      max_distance_m: 0.5
+    description: Extend tongue to lick food or water from the bowl repeatedly.
   ACT_CHEW_OR_CARRY_FOOD:
     unit_id: ACT_CHEW_OR_CARRY_FOOD
     unit_type: composite_action
     controller: mouth
     timeout_sec: 8.0
-    interrupt_policy: unsafe
-    from_postures: [standing, sitting]
+    interrupt_policy: non_interruptible
+    from_postures:
+    - standing
+    - sitting
     to_posture: standing
-    conditions: { food_acquired: true }
-    description: "Chew food thoroughly or pick up a large piece and carry it to a safe spot."
-
-  # ── ACT_SCRATCH_FOOD ───────────────────────────────────────────────────────
+    conditions:
+      food_acquired: true
+    description: Chew food thoroughly or pick up a large piece and carry it to a safe spot.
   ACT_SCRATCH_FOOD:
     unit_id: ACT_SCRATCH_FOOD
     unit_type: atomic_action
     controller: paw
     timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { food_on_ground: true, max_distance_m: 1.0 }
-    description: "Use front paws to scratch at food on the ground to break it apart."
-
-  # ── ACT_LICK_LIPS_AND_SWALLOW ──────────────────────────────────────────────
-  ACT_LICK_LIPS_AND_SWALLOW:
-    unit_id: ACT_LICK_LIPS_AND_SWALLOW
-    unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: ""
-    conditions: {}
-    description: "Lick around the mouth and swallow after eating or drinking."
-
-  # ── ACT_TURN_HEAD_AND_WIPE_MOUTH ───────────────────────────────────────────
-  ACT_TURN_HEAD_AND_WIPE_MOUTH:
-    unit_id: ACT_TURN_HEAD_AND_WIPE_MOUTH
-    unit_type: composite_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: {}
-    description: "Turn head to the side and wipe the mouth area against a foreleg or nearby surface."
-
-  # ── ACT_PAUSE_AND_LOOK_AT_OWNER ────────────────────────────────────────────
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    - sitting
+    to_posture: ''
+    conditions:
+      food_on_ground: true
+      max_distance_m: 1.0
+    description: Use front paws to scratch at food on the ground to break it apart.
   ACT_PAUSE_AND_LOOK_AT_OWNER:
     unit_id: ACT_PAUSE_AND_LOOK_AT_OWNER
     unit_type: atomic_action
     controller: head
-    timeout_sec: 3.5
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: ""
-    conditions: { owner_visible: true }
-    description: "Pause current activity, lift head, and gaze at owner for approval or interaction."
-
-  # ── ACT_CHASE_ROLLING_FOOD ─────────────────────────────────────────────────
-  ACT_CHASE_ROLLING_FOOD:
-    unit_id: ACT_CHASE_ROLLING_FOOD
-    unit_type: task
-    controller: motion
-    timeout_sec: 10.0
-    interrupt_policy: deferred
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { rolling_food_detected: true }
-    description: "Run after food that has rolled away, track its trajectory, and attempt to intercept it."
-
-  # ── ACT_CHANGE_POSTURE ─────────────────────────────────────────────────────
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    - sitting
+    - lying
+    to_posture: ''
+    conditions:
+      owner_visible: true
+    description: Pause current activity, lift head, and gaze at owner for approval or interaction.
   ACT_CHANGE_POSTURE:
     unit_id: ACT_CHANGE_POSTURE
     unit_type: atomic_action
     controller: posture
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: ""
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    - sitting
+    - lying
+    to_posture: ''
     conditions: {}
-    description: "Transition between postures (stand/sit/lie) as directed by the current stage."
-
-  # ── ACT_GROWL_WHILE_EATING ─────────────────────────────────────────────────
-  ACT_GROWL_WHILE_EATING:
-    unit_id: ACT_GROWL_WHILE_EATING
-    unit_type: atomic_action
-    controller: audio
-    timeout_sec: 6.0
-    interrupt_policy: unsafe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { food_acquired: true, other_entity_nearby: true }
-    description: "Emit a low, rumbling growl while eating to signal food-guarding behavior."
-
-  # ── ACT_BURP ───────────────────────────────────────────────────────────────
+    description: Transition between postures (stand/sit/lie) as directed by the current stage.
   ACT_BURP:
     unit_id: ACT_BURP
     unit_type: atomic_action
     controller: mouth
-    timeout_sec: 1.5
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: ""
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    - sitting
+    - lying
+    to_posture: ''
     conditions: {}
-    description: "Release a small burp after eating or drinking too quickly."
-
-  # ── ACT_LICK_LIPS_OR_NOSE ──────────────────────────────────────────────────
+    description: Release a small burp after eating or drinking too quickly.
   ACT_LICK_LIPS_OR_NOSE:
     unit_id: ACT_LICK_LIPS_OR_NOSE
     unit_type: atomic_action
     controller: mouth
-    timeout_sec: 1.5
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: ""
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    - sitting
+    - lying
+    to_posture: ''
     conditions: {}
-    description: "Quickly lick lips or nose — a self-soothing or post-eating gesture."
-
-  # ── ACT_SHAKE_HEAD ─────────────────────────────────────────────────────────
+    description: Quickly lick lips or nose — a self-soothing or post-eating gesture.
   ACT_SHAKE_HEAD:
     unit_id: ACT_SHAKE_HEAD
     unit_type: atomic_action
     controller: head
-    timeout_sec: 1.5
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: ""
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    - sitting
+    - lying
+    to_posture: ''
     conditions: {}
-    description: "Shake head side-to-side rapidly, often after eating, drinking, or waking."
-
-  # ── ACT_WALK_AWAY_OR_LIE_DOWN ──────────────────────────────────────────────
+    description: Shake head side-to-side rapidly, often after eating, drinking, or waking.
   ACT_WALK_AWAY_OR_LIE_DOWN:
     unit_id: ACT_WALK_AWAY_OR_LIE_DOWN
     unit_type: composite_action
     controller: motion
     timeout_sec: 6.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    - sitting
+    - lying
     to_posture: lying
     conditions: {}
-    description: "Either walk away from the current spot or lie down — a post-eating wind-down choice."
-
-  # ── ACT_SNIFF_GROUND_FOR_CRUMBS ────────────────────────────────────────────
+    description: Either walk away from the current spot or lie down — a post-eating wind-down choice.
   ACT_SNIFF_GROUND_FOR_CRUMBS:
     unit_id: ACT_SNIFF_GROUND_FOR_CRUMBS
     unit_type: atomic_action
     controller: head
     timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { max_distance_m: 2.0 }
-    description: "Lower nose to the ground and sniff systematically for dropped food crumbs."
-
-  # ── ACT_FAST_LICK_AND_SWALLOW ──────────────────────────────────────────────
-  ACT_FAST_LICK_AND_SWALLOW:
-    unit_id: ACT_FAST_LICK_AND_SWALLOW
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    to_posture: ''
+    conditions:
+      max_distance_m: 2.0
+    description: Lower nose to the ground and sniff systematically for dropped food crumbs.
+  ACT_CARRY_BOWL_AND_FOLLOW_OWNER:
+    unit_id: ACT_CARRY_BOWL_AND_FOLLOW_OWNER
     unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 4.0
-    interrupt_policy: unsafe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { food_acquired: true }
-    description: "Lick and swallow rapidly in quick succession when eating with urgency."
-
-  # ╔════════════════════════════════════════════════════════════════════════════╗
-  # ║  SECTION B: Excretion-related actions                                    ║
-  # ╚════════════════════════════════════════════════════════════════════════════╝
-
-  # ── ACT_SNIFF_AND_CIRCLE ───────────────────────────────────────────────────
-  ACT_SNIFF_AND_CIRCLE:
-    unit_id: ACT_SNIFF_AND_CIRCLE
-    unit_type: composite_action
-    controller: motion
-    timeout_sec: 8.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { ground_surface_ok: true }
-    description: "Sniff the ground while walking in a tight circle to find the right elimination spot."
-
-  # ── ACT_SCRATCH_GROUND ─────────────────────────────────────────────────────
-  ACT_SCRATCH_GROUND:
-    unit_id: ACT_SCRATCH_GROUND
-    unit_type: atomic_action
-    controller: paw
-    timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { ground_surface_ok: true }
-    description: "Use front or hind paws to scratch at the ground before elimination."
-
-  # ── ACT_SQUAT_TO_PEE ───────────────────────────────────────────────────────
-  ACT_SQUAT_TO_PEE:
-    unit_id: ACT_SQUAT_TO_PEE
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 4.0
-    interrupt_policy: unsafe
-    from_postures: [standing]
-    to_posture: squatting
-    conditions: { elimination_ready: true }
-    description: "Lower into a squatting posture to urinate."
-
-  # ── ACT_SQUAT_TO_POOP ──────────────────────────────────────────────────────
-  ACT_SQUAT_TO_POOP:
-    unit_id: ACT_SQUAT_TO_POOP
-    unit_type: atomic_action
-    controller: posture
     timeout_sec: 5.0
-    interrupt_policy: unsafe
-    from_postures: [standing]
-    to_posture: squatting
-    conditions: { elimination_ready: true }
-    description: "Lower into a deeper squatting posture to defecate."
-
-  # ── ACT_HESITATE ───────────────────────────────────────────────────────────
-  ACT_HESITATE:
-    unit_id: ACT_HESITATE
+    interrupt_policy: safe_point
+  ACT_PAW_AT_BOWL_FOR_FOOD:
+    unit_id: ACT_PAW_AT_BOWL_FOR_FOOD
     unit_type: atomic_action
-    controller: posture
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing, squatting]
-    to_posture: ""
-    conditions: {}
-    description: "Pause and hold position with slight body tension before committing to elimination."
-
-  # ── ACT_TENSE_BODY ─────────────────────────────────────────────────────────
-  ACT_TENSE_BODY:
-    unit_id: ACT_TENSE_BODY
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD:
+    unit_id: ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD
     unit_type: atomic_action
-    controller: posture
-    timeout_sec: 4.0
-    interrupt_policy: unsafe
-    from_postures: [squatting]
-    to_posture: ""
-    conditions: { elimination_in_progress: true }
-    description: "Tense core and leg muscles during active elimination."
-
-  # ── ACT_TAIL_MOVEMENT ──────────────────────────────────────────────────────
-  ACT_TAIL_MOVEMENT:
-    unit_id: ACT_TAIL_MOVEMENT
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_LICK_AND_SWALLOW:
+    unit_id: ACT_LICK_AND_SWALLOW
     unit_type: atomic_action
-    controller: tail
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing, squatting]
-    to_posture: ""
-    conditions: {}
-    description: "Lift or adjust tail position during elimination or marking."
-
-  # ── ACT_SLIGHT_TREMOR ──────────────────────────────────────────────────────
-  ACT_SLIGHT_TREMOR:
-    unit_id: ACT_SLIGHT_TREMOR
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_SNIFF_GROUND_FOR_CRUMBS_AND_LEAVE:
+    unit_id: ACT_SNIFF_GROUND_FOR_CRUMBS_AND_LEAVE
     unit_type: atomic_action
-    controller: motion
-    timeout_sec: 3.0
-    interrupt_policy: unsafe
-    from_postures: [squatting]
-    to_posture: ""
-    conditions: { elimination_in_progress: true }
-    description: "Add a subtle, intermittent tremor to the hindquarters during elimination."
-
-  # ── ACT_LOWER_HEAD_OR_TURN ─────────────────────────────────────────────────
-  ACT_LOWER_HEAD_OR_TURN:
-    unit_id: ACT_LOWER_HEAD_OR_TURN
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_LICK_LIPS_OR_NOSE_AND_LEAVE:
+    unit_id: ACT_LICK_LIPS_OR_NOSE_AND_LEAVE
     unit_type: atomic_action
-    controller: head
-    timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing, squatting]
-    to_posture: ""
-    conditions: {}
-    description: "Lower the head or turn it to the side during elimination to check surroundings."
-
-  # ── ACT_STAND_UP_WITH_HIND_LEGS ────────────────────────────────────────────
-  ACT_STAND_UP_WITH_HIND_LEGS:
-    unit_id: ACT_STAND_UP_WITH_HIND_LEGS
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_PAW_AT_BOWL_AND_WAIT_FOR_FOOD:
+    unit_id: ACT_PAW_AT_BOWL_AND_WAIT_FOR_FOOD
     unit_type: atomic_action
-    controller: posture
-    timeout_sec: 2.5
-    interrupt_policy: safe
-    from_postures: [squatting]
-    to_posture: standing
-    conditions: {}
-    description: "Push up from a squat using both hind legs to return to a standing posture."
-
-  # ── ACT_SCRATCH_SOIL_OR_GROUND ─────────────────────────────────────────────
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_SNIFF_BOWL_RIM_AND_WAIT_FOR_FOOD:
+    unit_id: ACT_SNIFF_BOWL_RIM_AND_WAIT_FOR_FOOD
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_WHINE_AND_WAIT_FOR_FOOD:
+    unit_id: ACT_WHINE_AND_WAIT_FOR_FOOD
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_SNIFF_AND_CIRCLE_AT_TOILET_SPOT:
+    unit_id: ACT_SNIFF_AND_CIRCLE_AT_TOILET_SPOT
+    unit_type: atomic_action
+    timeout_sec: 6.0
+    interrupt_policy: safe_point
+  ACT_SQUAT_AND_ELIMINATE:
+    unit_id: ACT_SQUAT_AND_ELIMINATE
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: non_interruptible
   ACT_SCRATCH_SOIL_OR_GROUND:
     unit_id: ACT_SCRATCH_SOIL_OR_GROUND
     unit_type: atomic_action
     controller: paw
     timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { ground_surface_ok: true }
-    description: "Kick backwards with hind paws to scratch soil or ground after elimination — a territorial marking instinct."
-
-  # ── ACT_SNIFF_EXCREMENT ────────────────────────────────────────────────────
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    to_posture: ''
+    conditions:
+      ground_surface_ok: true
+    description: Kick backwards with hind paws to scratch soil or ground after elimination — a territorial marking instinct.
   ACT_SNIFF_EXCREMENT:
     unit_id: ACT_SNIFF_EXCREMENT
     unit_type: atomic_action
     controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { excrement_nearby: true, max_distance_m: 0.5 }
-    description: "Lower nose and sniff excrement to inspect the result of elimination."
-
-  # ── ACT_WALK_AWAY_OR_SHAKE_HEAD ────────────────────────────────────────────
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    to_posture: ''
+    conditions:
+      excrement_nearby: true
+      max_distance_m: 0.5
+    description: Lower nose and sniff excrement to inspect the result of elimination.
   ACT_WALK_AWAY_OR_SHAKE_HEAD:
     unit_id: ACT_WALK_AWAY_OR_SHAKE_HEAD
     unit_type: composite_action
     controller: motion
     timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing]
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
     to_posture: standing
     conditions: {}
-    description: "Either walk a few steps away from the elimination spot or shake the head — post-elimination clean break."
-
-  # ╔════════════════════════════════════════════════════════════════════════════╗
-  # ║  SECTION C: Grooming / self-care actions                                 ║
-  # ╚════════════════════════════════════════════════════════════════════════════╝
-
-  # ── ACT_LICK_PAWS_OR_FUR ───────────────────────────────────────────────────
+    description: Either walk a few steps away from the elimination spot or shake the head — post-elimination clean break.
   ACT_LICK_PAWS_OR_FUR:
     unit_id: ACT_LICK_PAWS_OR_FUR
     unit_type: atomic_action
     controller: mouth
     timeout_sec: 6.0
-    interrupt_policy: safe
-    from_postures: [sitting, lying]
-    to_posture: ""
+    interrupt_policy: safe_point
+    from_postures:
+    - sitting
+    - lying
+    to_posture: ''
     conditions: {}
-    description: "Extend tongue to lick front paws or accessible fur areas for cleaning."
-
-  # ── ACT_SCRATCH ────────────────────────────────────────────────────────────
-  ACT_SCRATCH:
-    unit_id: ACT_SCRATCH
+    description: Extend tongue to lick front paws or accessible fur areas for cleaning.
+  ACT_RUB_BODY_AGAINST_OBJECT:
+    unit_id: ACT_RUB_BODY_AGAINST_OBJECT
     unit_type: atomic_action
-    controller: paw
-    timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: ""
-    conditions: {}
-    description: "Use a hind paw to scratch behind the ear or along the body side."
-
-  # ── ACT_SHAKE_OFF_WATER ────────────────────────────────────────────────────
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_PAW_AT_MUZZLE:
+    unit_id: ACT_PAW_AT_MUZZLE
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
   ACT_SHAKE_OFF_WATER:
     unit_id: ACT_SHAKE_OFF_WATER
     unit_type: atomic_action
     controller: motion
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { wet: true }
-    description: "Shake the entire body vigorously from head to tail to fling off water."
-
-  # ── ACT_STRETCH_LAZILY ─────────────────────────────────────────────────────
-  ACT_STRETCH_LAZILY:
-    unit_id: ACT_STRETCH_LAZILY
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [lying, sitting]
-    to_posture: standing
-    conditions: {}
-    description: "Extend front legs forward, lower chest, and stretch the back in a lazy, luxurious motion."
-
-  # ── ACT_ROLL_OVER ──────────────────────────────────────────────────────────
-  ACT_ROLL_OVER:
-    unit_id: ACT_ROLL_OVER
-    unit_type: composite_action
-    controller: posture
-    timeout_sec: 4.0
-    interrupt_policy: unsafe
-    from_postures: [lying]
-    to_posture: lying
-    conditions: { flat_surface: true }
-    description: "Rotate the body from lying on one side to the other side, optionally showing the belly."
-
-  # ── ACT_RUB_AGAINST_OBJECT ─────────────────────────────────────────────────
-  ACT_RUB_AGAINST_OBJECT:
-    unit_id: ACT_RUB_AGAINST_OBJECT
-    unit_type: atomic_action
-    controller: motion
     timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { object_nearby: true, max_distance_m: 0.5 }
-    description: "Press a body flank against a wall, furniture, or person and rub back and forth."
-
-  # ── ACT_PANT ───────────────────────────────────────────────────────────────
-  ACT_PANT:
-    unit_id: ACT_PANT
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    to_posture: standing
+    conditions:
+      wet: true
+    description: Shake the entire body vigorously from head to tail to fling off water.
+  ACT_SCRATCH_EAR_WITH_HIND_LEG:
+    unit_id: ACT_SCRATCH_EAR_WITH_HIND_LEG
     unit_type: atomic_action
-    controller: mouth
     timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: ""
-    conditions: {}
-    description: "Open mouth, extend tongue slightly, and breathe rapidly — cooling or exertion panting."
-
-  # ╔════════════════════════════════════════════════════════════════════════════╗
-  # ║  SECTION D: Sleep-related actions                                        ║
-  # ╚════════════════════════════════════════════════════════════════════════════╝
-
-  # ── ACT_CIRCLE_AROUND ──────────────────────────────────────────────────────
+    interrupt_policy: safe_point
   ACT_CIRCLE_AROUND:
     unit_id: ACT_CIRCLE_AROUND
     unit_type: composite_action
     controller: motion
     timeout_sec: 6.0
-    interrupt_policy: safe
-    from_postures: [standing]
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
     to_posture: standing
-    conditions: { flat_surface: true }
-    description: "Walk in one or more complete circles before lying down — a pre-sleep nesting instinct."
-
-  # ── ACT_SCRATCH_BED_OR_GROUND ──────────────────────────────────────────────
+    conditions: {}
+    description: Move in rapid circles around a person, object, or open space — excited orbiting behavior.
   ACT_SCRATCH_BED_OR_GROUND:
     unit_id: ACT_SCRATCH_BED_OR_GROUND
     unit_type: atomic_action
     controller: paw
     timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { bed_or_mat_nearby: true }
-    description: "Paw at the bedding or ground repeatedly to fluff or prepare a sleeping surface."
-
-  # ── ACT_LIE_ON_SIDE_AND_STRETCH ────────────────────────────────────────────
-  ACT_LIE_ON_SIDE_AND_STRETCH:
-    unit_id: ACT_LIE_ON_SIDE_AND_STRETCH
-    unit_type: composite_action
-    controller: posture
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    to_posture: ''
+    conditions:
+      bed_or_mat_nearby: true
+    description: Paw at the bedding or ground repeatedly to fluff or prepare a sleeping surface.
+  ACT_STRETCH_BODY:
+    unit_id: ACT_STRETCH_BODY
+    unit_type: atomic_action
     timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
+    interrupt_policy: safe_point
+  ACT_YAWN:
+    unit_id: ACT_YAWN
+    unit_type: atomic_action
+    controller: mouth
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    from_postures:
+    - lying
+    - sitting
+    - standing
+    to_posture: ''
+    conditions: {}
+    description: Open mouth wide in a yawn — often upon waking or when transitioning to wakefulness.
+  ACT_SPLoot_LIE_DOWN:
+    unit_id: ACT_SPLoot_LIE_DOWN
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
     to_posture: lying
-    conditions: { flat_surface: true }
-    description: "Lower into a side-lying position and extend limbs away from the body in a full-body stretch."
-
-  # ── ACT_LICK_FUR_OR_PAWS ───────────────────────────────────────────────────
   ACT_LICK_FUR_OR_PAWS:
     unit_id: ACT_LICK_FUR_OR_PAWS
     unit_type: atomic_action
     controller: mouth
     timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [lying]
-    to_posture: ""
+    interrupt_policy: safe_point
+    from_postures:
+    - lying
+    to_posture: ''
     conditions: {}
-    description: "While lying down, lick paws or accessible fur — a pre-sleep grooming routine."
-
-  # ── ACT_SLEEP_CURLED_UP ────────────────────────────────────────────────────
+    description: While lying down, lick paws or accessible fur — a pre-sleep grooming routine.
   ACT_SLEEP_CURLED_UP:
     unit_id: ACT_SLEEP_CURLED_UP
     unit_type: atomic_action
     controller: posture
     timeout_sec: 20.0
-    interrupt_policy: deferred
-    from_postures: [lying]
-    to_posture: ""
-    conditions: { flat_surface: true }
-    description: "Tuck the body into a tight curl with the tail wrapped around the nose — deep, secure sleep pose."
-
-  # ── ACT_SLEEP_ON_STOMACH ───────────────────────────────────────────────────
+    interrupt_policy: safe_point
+    from_postures:
+    - lying
+    to_posture: ''
+    conditions:
+      flat_surface: true
+    description: Tuck the body into a tight curl with the tail wrapped around the nose — deep, secure sleep pose.
   ACT_SLEEP_ON_STOMACH:
     unit_id: ACT_SLEEP_ON_STOMACH
     unit_type: atomic_action
     controller: posture
     timeout_sec: 20.0
-    interrupt_policy: deferred
-    from_postures: [lying]
-    to_posture: ""
-    conditions: { flat_surface: true }
-    description: "Lie flat on the stomach with legs tucked under or slightly splayed — light sleep pose."
-
-  # ── ACT_SLEEP_ON_SIDE_CURLED_UP ────────────────────────────────────────────
+    interrupt_policy: safe_point
+    from_postures:
+    - lying
+    to_posture: ''
+    conditions:
+      flat_surface: true
+    description: Lie flat on the stomach with legs tucked under or slightly splayed — light sleep pose.
   ACT_SLEEP_ON_SIDE_CURLED_UP:
     unit_id: ACT_SLEEP_ON_SIDE_CURLED_UP
     unit_type: atomic_action
     controller: posture
     timeout_sec: 20.0
-    interrupt_policy: deferred
-    from_postures: [lying]
-    to_posture: ""
-    conditions: { flat_surface: true }
-    description: "Lie on one side with legs partially curled toward the belly — relaxed sleep pose."
-
-  # ── ACT_FLIP_BODY ──────────────────────────────────────────────────────────
+    interrupt_policy: safe_point
+    from_postures:
+    - lying
+    to_posture: ''
+    conditions:
+      flat_surface: true
+    description: Lie on one side with legs partially curled toward the belly — relaxed sleep pose.
   ACT_FLIP_BODY:
     unit_id: ACT_FLIP_BODY
     unit_type: atomic_action
     controller: posture
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [lying]
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    from_postures:
+    - lying
     to_posture: lying
-    conditions: { flat_surface: true }
-    description: "Flip the body from one side to the other while remaining in a lying position."
-
-  # ── ACT_WHINE_SOFTLY ───────────────────────────────────────────────────────
+    conditions:
+      flat_surface: true
+    description: Flip the body from one side to the other while remaining in a lying position.
   ACT_WHINE_SOFTLY:
     unit_id: ACT_WHINE_SOFTLY
     unit_type: atomic_action
     controller: vocal
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [lying, sitting]
-    to_posture: ""
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    from_postures:
+    - lying
+    - sitting
+    to_posture: ''
     conditions: {}
-    description: "Emit a soft, low whine while resting — may indicate dreaming or mild discomfort."
-
-  # ── ACT_TWITCH_OR_KICK_LEGS ────────────────────────────────────────────────
+    description: Emit a soft, low whine while resting — may indicate dreaming or mild discomfort.
   ACT_TWITCH_OR_KICK_LEGS:
     unit_id: ACT_TWITCH_OR_KICK_LEGS
     unit_type: atomic_action
     controller: motion
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [lying]
-    to_posture: ""
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    from_postures:
+    - lying
+    to_posture: ''
     conditions: {}
-    description: "Give a sudden but gentle twitch or kick with one or more legs — dreaming motor activity."
-
-  # ── ACT_SHAKE_HEAD_OR_SMACK_LIPS ───────────────────────────────────────────
-  ACT_SHAKE_HEAD_OR_SMACK_LIPS:
-    unit_id: ACT_SHAKE_HEAD_OR_SMACK_LIPS
-    unit_type: composite_action
-    controller: head
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [lying]
-    to_posture: ""
-    conditions: {}
-    description: "Briefly shake the head or smack lips while in light sleep — semi-conscious adjustment."
-
-  # ── ACT_WAG_TAIL ───────────────────────────────────────────────────────────
-  ACT_WAG_TAIL:
-    unit_id: ACT_WAG_TAIL
-    unit_type: atomic_action
-    controller: tail
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [lying, sitting, standing]
-    to_posture: ""
-    conditions: {}
-    description: "Move the tail side-to-side with varying speed and amplitude — may occur even during light sleep."
-
-  # ── ACT_YAWN ───────────────────────────────────────────────────────────────
-  ACT_YAWN:
-    unit_id: ACT_YAWN
-    unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [lying, sitting, standing]
-    to_posture: ""
-    conditions: {}
-    description: "Open mouth wide in a yawn — often upon waking or when transitioning to wakefulness."
-
-  # ── ACT_GETUP_CRAWL ────────────────────────────────────────────────────────
+    description: Give a sudden but gentle twitch or kick with one or more legs — dreaming motor activity.
   ACT_GETUP_CRAWL:
     unit_id: ACT_GETUP_CRAWL
     unit_type: composite_action
     controller: motion
     timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [lying]
+    interrupt_policy: safe_point
+    from_postures:
+    - lying
     to_posture: standing
     conditions: {}
-    description: "Move from lying to standing by crawling forward with front legs first, then pushing up with hind legs."
-
-  # ── ACT_GETUP_ROLL ─────────────────────────────────────────────────────────
+    description: Move from lying to standing by crawling forward with front legs first, then pushing up with hind legs.
   ACT_GETUP_ROLL:
     unit_id: ACT_GETUP_ROLL
     unit_type: composite_action
     controller: motion
-    timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [lying]
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    from_postures:
+    - lying
     to_posture: standing
     conditions: {}
-    description: "Roll from lying onto the back, then rotate and push up into a standing posture."
-
-  # ── ACT_GETUP_BOUNCE ───────────────────────────────────────────────────────
+    description: Roll from lying onto the back, then rotate and push up into a standing posture.
   ACT_GETUP_BOUNCE:
     unit_id: ACT_GETUP_BOUNCE
     unit_type: composite_action
     controller: motion
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [lying]
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    from_postures:
+    - lying
     to_posture: standing
     conditions: {}
-    description: "Spring up from lying to standing in one energetic bounce — typical of excited wake-up."
-
-  # ── ACT_GETUP_STRETCH ──────────────────────────────────────────────────────
+    description: Spring up from lying to standing in one energetic bounce — typical of excited wake-up.
   ACT_GETUP_STRETCH:
     unit_id: ACT_GETUP_STRETCH
     unit_type: composite_action
     controller: posture
     timeout_sec: 6.0
-    interrupt_policy: safe
-    from_postures: [lying]
+    interrupt_policy: safe_point
+    from_postures:
+    - lying
     to_posture: standing
     conditions: {}
-    description: "Stretch the front legs then hind legs sequentially before fully rising to stand."
-
-  # ── ACT_GETUP_SIT ──────────────────────────────────────────────────────────
+    description: Stretch the front legs then hind legs sequentially before fully rising to stand.
   ACT_GETUP_SIT:
     unit_id: ACT_GETUP_SIT
     unit_type: composite_action
     controller: posture
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [lying]
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    from_postures:
+    - lying
     to_posture: sitting
     conditions: {}
-    description: "Transition from lying to sitting by tucking hind legs and lifting the front body."
-
-  # ── ACT_SLEEP_ON_SIDE ──────────────────────────────────────────────────────
+    description: Transition from lying to sitting by tucking hind legs and lifting the front body.
   ACT_SLEEP_ON_SIDE:
     unit_id: ACT_SLEEP_ON_SIDE
     unit_type: atomic_action
     controller: posture
     timeout_sec: 20.0
-    interrupt_policy: deferred
-    from_postures: [lying]
-    to_posture: ""
-    conditions: { flat_surface: true }
-    description: "Lie fully on one side with legs extended outward — deep, comfortable sleep pose."
-
-  # ── ACT_SLEEP_ON_BACK ──────────────────────────────────────────────────────
+    interrupt_policy: safe_point
+    from_postures:
+    - lying
+    to_posture: ''
+    conditions:
+      flat_surface: true
+    description: Lie fully on one side with legs extended outward — deep, comfortable sleep pose.
   ACT_SLEEP_ON_BACK:
     unit_id: ACT_SLEEP_ON_BACK
     unit_type: atomic_action
     controller: posture
     timeout_sec: 20.0
-    interrupt_policy: deferred
-    from_postures: [lying]
-    to_posture: ""
-    conditions: { flat_surface: true, secure_environment: true }
-    description: "Lie on the back with belly exposed and legs in the air — indicates total trust and deep sleep."
-
-  # ╔════════════════════════════════════════════════════════════════════════════╗
-  # ║  SECTION E: Walking / Energy / Low-power actions                         ║
-  # ╚════════════════════════════════════════════════════════════════════════════╝
-
-  # ── ACT_PANT_IN_PLACE ──────────────────────────────────────────────────────
-  ACT_PANT_IN_PLACE:
-    unit_id: ACT_PANT_IN_PLACE
+    interrupt_policy: safe_point
+    from_postures:
+    - lying
+    to_posture: ''
+    conditions:
+      flat_surface: true
+      secure_environment: true
+    description: Lie on the back with belly exposed and legs in the air — indicates total trust and deep sleep.
+  ACT_SLOW_DOWN_IN_RESPONSE_TO_OWNER:
+    unit_id: ACT_SLOW_DOWN_IN_RESPONSE_TO_OWNER
     unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 6.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: ""
-    conditions: { temperature_high: true }
-    description: "Pant heavily while staying in place — cooling behavior after exertion or in hot conditions."
-
-  # ── ACT_RESIST_WALKING ─────────────────────────────────────────────────────
-  ACT_RESIST_WALKING:
-    unit_id: ACT_RESIST_WALKING
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_RETURN_TO_DOG_BED_FOR_CHARGING:
+    unit_id: ACT_RETURN_TO_DOG_BED_FOR_CHARGING
     unit_type: atomic_action
-    controller: motion
-    timeout_sec: 8.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { leash_attached: true }
-    description: "Brace legs and lean back to resist forward movement — stubborn refusal to walk."
-
-  # ── ACT_SLOW_MOVEMENT ──────────────────────────────────────────────────────
-  ACT_SLOW_MOVEMENT:
-    unit_id: ACT_SLOW_MOVEMENT
-    unit_type: modifier
-    controller: meta
-    timeout_sec: 0.0
-    interrupt_policy: safe
-    from_postures: []
-    to_posture: ""
-    conditions: {}
-    description: "Modifier that scales down motion speed, acceleration, and amplitude. Applied as an overlay to other motion actions."
-    effects:
-      speed_scale: 0.45
-      acceleration_scale: 0.60
-      amplitude_scale: 0.80
-
-  # ── ACT_RETURN_TO_CHARGER ──────────────────────────────────────────────────
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
   ACT_RETURN_TO_CHARGER:
     unit_id: ACT_RETURN_TO_CHARGER
     unit_type: task
     controller: nav
     timeout_sec: 30.0
-    interrupt_policy: deferred
-    from_postures: [standing]
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
     to_posture: lying
-    conditions: { charger_location_known: true, battery_low: true }
-    description: "Navigate back to the charging dock using known map location, then dock and rest."
-
-  # ── ACT_BARK_AND_LIE_DOWN_IF_NO_CHARGER ────────────────────────────────────
+    conditions:
+      charger_location_known: true
+      battery_low: true
+    description: Navigate back to the charging dock using known map location, then dock and rest.
   ACT_BARK_AND_LIE_DOWN_IF_NO_CHARGER:
     unit_id: ACT_BARK_AND_LIE_DOWN_IF_NO_CHARGER
     unit_type: composite_action
     controller: vocal
     timeout_sec: 10.0
-    interrupt_policy: safe
-    from_postures: [standing]
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
     to_posture: lying
-    conditions: { battery_low: true, charger_location_unknown: true }
-    description: "Bark to alert owner of low battery, then lie down and conserve power when no charger is reachable."
-
-  # ╔════════════════════════════════════════════════════════════════════════════╗
-  # ║  SECTION F: Socialization actions (other dogs / animals)                 ║
-  # ╚════════════════════════════════════════════════════════════════════════════╝
-
-  # ── ACT_BARK_OR_HOWL ───────────────────────────────────────────────────────
-  ACT_BARK_OR_HOWL:
-    unit_id: ACT_BARK_OR_HOWL
+    conditions:
+      battery_low: true
+      charger_location_unknown: true
+    description: Bark to alert owner of low battery, then lie down and conserve power when no charger is reachable.
+  ACT_BARK_OR_WHINE_BRIEFLY:
+    unit_id: ACT_BARK_OR_WHINE_BRIEFLY
     unit_type: atomic_action
-    controller: audio
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { other_animal_detected: true }
-    description: "Emit a bark or sustained howl directed at another animal — communication or alert."
-
-  # ── ACT_STARE_AND_TILT_HEAD ────────────────────────────────────────────────
-  ACT_STARE_AND_TILT_HEAD:
-    unit_id: ACT_STARE_AND_TILT_HEAD
-    unit_type: composite_action
-    controller: head
-    timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { other_animal_detected: true }
-    description: "Fix gaze on another animal and tilt the head to one side — curiosity or confusion signal."
-
-  # ── ACT_SNIFF_FACE_OR_EARS ─────────────────────────────────────────────────
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_STOP_OBSERVE_AND_TILT_HEAD:
+    unit_id: ACT_STOP_OBSERVE_AND_TILT_HEAD
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_SNIFF_TOWARD_OTHER_ANIMAL:
+    unit_id: ACT_SNIFF_TOWARD_OTHER_ANIMAL
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
   ACT_SNIFF_FACE_OR_EARS:
     unit_id: ACT_SNIFF_FACE_OR_EARS
     unit_type: atomic_action
     controller: head
     timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { other_animal_nearby: true, max_distance_m: 0.3 }
-    description: "Approach and sniff the face or ears of another animal — a standard canine greeting."
-
-  # ── ACT_SNIFF_BUTT_OR_TAIL ─────────────────────────────────────────────────
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    to_posture: ''
+    conditions:
+      other_animal_nearby: true
+      max_distance_m: 0.3
+    description: Approach and sniff the face or ears of another animal — a standard canine greeting.
   ACT_SNIFF_BUTT_OR_TAIL:
     unit_id: ACT_SNIFF_BUTT_OR_TAIL
     unit_type: atomic_action
     controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { other_animal_nearby: true, max_distance_m: 0.3 }
-    description: "Move behind another animal and sniff the rear or tail area — information-gathering greeting."
-
-  # ── ACT_TOUCH_NOSE_OR_HEAD_GENTLY ──────────────────────────────────────────
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    to_posture: ''
+    conditions:
+      other_animal_nearby: true
+      max_distance_m: 0.3
+    description: Move behind another animal and sniff the rear or tail area — information-gathering greeting.
   ACT_TOUCH_NOSE_OR_HEAD_GENTLY:
     unit_id: ACT_TOUCH_NOSE_OR_HEAD_GENTLY
     unit_type: atomic_action
     controller: head
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { other_animal_nearby: true, max_distance_m: 0.2 }
-    description: "Gently touch noses or the side of the head against another animal — friendly greeting."
-
-  # ── ACT_APPROACH_SLOWLY_SIDEWAYS ───────────────────────────────────────────
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    to_posture: ''
+    conditions:
+      other_animal_nearby: true
+      max_distance_m: 0.2
+    description: Gently touch noses or the side of the head against another animal — friendly greeting.
   ACT_APPROACH_SLOWLY_SIDEWAYS:
     unit_id: ACT_APPROACH_SLOWLY_SIDEWAYS
     unit_type: atomic_action
     controller: motion
     timeout_sec: 6.0
-    interrupt_policy: safe
-    from_postures: [standing]
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
     to_posture: standing
-    conditions: { other_animal_detected: true }
-    description: "Approach another animal using a sideways, indirect path — de-escalation body language."
-
-  # ── ACT_LOWER_HEAD_FLOP_EARS_WAG_TAIL ──────────────────────────────────────
+    conditions:
+      other_animal_detected: true
+    description: Approach another animal using a sideways, indirect path — de-escalation body language.
   ACT_LOWER_HEAD_FLOP_EARS_WAG_TAIL:
     unit_id: ACT_LOWER_HEAD_FLOP_EARS_WAG_TAIL
     unit_type: composite_action
     controller: head
     timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { other_animal_nearby: true }
-    description: "Lower head slightly, relax ears, and wag tail in a low arc — appeasement and friendliness signal."
-
-  # ── ACT_LIE_BESIDE_OTHER_ANIMAL ────────────────────────────────────────────
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    to_posture: ''
+    conditions:
+      other_animal_nearby: true
+    description: Lower head slightly, relax ears, and wag tail in a low arc — appeasement and friendliness signal.
   ACT_LIE_BESIDE_OTHER_ANIMAL:
     unit_id: ACT_LIE_BESIDE_OTHER_ANIMAL
     unit_type: atomic_action
     controller: posture
     timeout_sec: 8.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    - sitting
     to_posture: lying
-    conditions: { other_animal_nearby: true, max_distance_m: 1.0 }
-    description: "Lie down beside another animal — demonstrating trust and willingness to share space."
-
-  # ── ACT_PLAY_BOW ───────────────────────────────────────────────────────────
+    conditions:
+      other_animal_nearby: true
+      max_distance_m: 1.0
+    description: Lie down beside another animal — demonstrating trust and willingness to share space.
+  ACT_RUN_AWAY_AND_LOOK_BACK:
+    unit_id: ACT_RUN_AWAY_AND_LOOK_BACK
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
   ACT_PLAY_BOW:
     unit_id: ACT_PLAY_BOW
     unit_type: atomic_action
     controller: posture
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing]
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
     to_posture: standing
     conditions: {}
-    description: "Lower front body with elbows on the ground while keeping hindquarters raised — classic play invitation."
-
-  # ── ACT_CARRY_AND_SHAKE_OBJECT ─────────────────────────────────────────────
-  ACT_CARRY_AND_SHAKE_OBJECT:
-    unit_id: ACT_CARRY_AND_SHAKE_OBJECT
-    unit_type: composite_action
-    controller: mouth
-    timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { object_in_mouth: true }
-    description: "Grip an object in the mouth and shake the head side-to-side — predatory-play behavior."
-
-  # ── ACT_POUNCE_GENTLY ──────────────────────────────────────────────────────
-  ACT_POUNCE_GENTLY:
-    unit_id: ACT_POUNCE_GENTLY
+    description: Lower front body with elbows on the ground while keeping hindquarters raised — classic play invitation.
+  ACT_BUMP_OTHER_GENTLY_WITH_RELAXED_BODY:
+    unit_id: ACT_BUMP_OTHER_GENTLY_WITH_RELAXED_BODY
     unit_type: atomic_action
-    controller: motion
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { playmate_nearby: true, max_distance_m: 1.5 }
-    description: "Spring forward with front paws landing softly near a playmate — gentle play pounce."
-
-  # ── ACT_RUN_IN_CIRCLES_OR_CHASE ────────────────────────────────────────────
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_POUNCE_OR_SIDE_HOP_GENTLY:
+    unit_id: ACT_POUNCE_OR_SIDE_HOP_GENTLY
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
   ACT_RUN_IN_CIRCLES_OR_CHASE:
     unit_id: ACT_RUN_IN_CIRCLES_OR_CHASE
     unit_type: composite_action
     controller: motion
     timeout_sec: 8.0
-    interrupt_policy: safe
-    from_postures: [standing]
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
     to_posture: standing
-    conditions: { playmate_nearby: true, open_space: true }
-    description: "Run in large circles or give chase to a playmate — high-energy social play."
-
-  # ── ACT_PAW_GENTLY_AT_OTHER ────────────────────────────────────────────────
+    conditions:
+      playmate_nearby: true
+      open_space: true
+    description: Run in large circles or give chase to a playmate — high-energy social play.
   ACT_PAW_GENTLY_AT_OTHER:
     unit_id: ACT_PAW_GENTLY_AT_OTHER
     unit_type: atomic_action
     controller: paw
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { other_animal_nearby: true, max_distance_m: 0.5 }
-    description: "Reach out with a front paw and gently tap or pat another animal — playful invitation."
-
-  # ╔════════════════════════════════════════════════════════════════════════════╗
-  # ║  SECTION G: Food-seeking actions                                         ║
-  # ╚════════════════════════════════════════════════════════════════════════════╝
-
-  # ── ACT_GUARD_FOOD_BOWL_OR_SNACK_CABINET ───────────────────────────────────
-  ACT_GUARD_FOOD_BOWL_OR_SNACK_CABINET:
-    unit_id: ACT_GUARD_FOOD_BOWL_OR_SNACK_CABINET
-    unit_type: composite_action
-    controller: posture
-    timeout_sec: 12.0
-    interrupt_policy: deferred
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { food_resource_nearby: true }
-    description: "Stand or lie protectively near a known food resource, watching for other entities that might approach."
-
-  # ── ACT_SCRATCH_FOOD_BOWL_OR_SNACK_CABINET ─────────────────────────────────
-  ACT_SCRATCH_FOOD_BOWL_OR_SNACK_CABINET:
-    unit_id: ACT_SCRATCH_FOOD_BOWL_OR_SNACK_CABINET
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    - sitting
+    to_posture: ''
+    conditions:
+      other_animal_nearby: true
+      max_distance_m: 0.5
+    description: Reach out with a front paw and gently tap or pat another animal — playful invitation.
+  ACT_PAW_AT_OWNER:
+    unit_id: ACT_PAW_AT_OWNER
     unit_type: atomic_action
     controller: paw
     timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { food_resource_nearby: true, max_distance_m: 0.5 }
-    description: "Scratch at the food bowl or the cabinet door where snacks are stored — demand behavior."
-
-  # ── ACT_CARRY_LEASH_OR_SHOE ────────────────────────────────────────────────
-  ACT_CARRY_LEASH_OR_SHOE:
-    unit_id: ACT_CARRY_LEASH_OR_SHOE
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    - sitting
+    to_posture: ''
+    conditions:
+      owner_nearby: true
+      max_distance_m: 0.5
+    description: Gently paw at the owner's arm, leg, or lap — calm attention-seeking.
+  ACT_GENTLY_MOUTH_PANTS_OR_HAND:
+    unit_id: ACT_GENTLY_MOUTH_PANTS_OR_HAND
     unit_type: atomic_action
-    controller: mouth
     timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { leash_or_shoe_nearby: true }
-    description: "Pick up and carry a leash or shoe — often a signal that the dog wants to go for a walk."
-
-  # ── ACT_STARE_AT_FOOD_IN_HAND ──────────────────────────────────────────────
-  ACT_STARE_AT_FOOD_IN_HAND:
-    unit_id: ACT_STARE_AT_FOOD_IN_HAND
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { food_in_owner_hand: true, owner_visible: true }
-    description: "Fixate gaze on food the owner is holding — intense begging stare."
-
-  # ── ACT_PRESS_BELL_OR_TRIGGER_MECHANISM ────────────────────────────────────
-  ACT_PRESS_BELL_OR_TRIGGER_MECHANISM:
-    unit_id: ACT_PRESS_BELL_OR_TRIGGER_MECHANISM
-    unit_type: atomic_action
-    controller: paw
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { trigger_mechanism_nearby: true, max_distance_m: 0.5 }
-    description: "Press a bell, button, or trigger mechanism with a paw — trained communication for wants."
-
-  # ╔════════════════════════════════════════════════════════════════════════════╗
-  # ║  SECTION H: Seeking-owner actions                                        ║
-  # ╚════════════════════════════════════════════════════════════════════════════╝
-
-  # ── ACT_SEARCH_FOR_PERSON ──────────────────────────────────────────────────
-  ACT_SEARCH_FOR_PERSON:
-    unit_id: ACT_SEARCH_FOR_PERSON
-    unit_type: task
-    controller: nav
-    timeout_sec: 20.0
-    interrupt_policy: deferred
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { person_to_find: true }
-    description: "Systematically search the environment for a specific person, checking known locations."
-
-  # ── ACT_RUB_AGAINST_LEG_OR_LEAN ────────────────────────────────────────────
-  ACT_RUB_AGAINST_LEG_OR_LEAN:
-    unit_id: ACT_RUB_AGAINST_LEG_OR_LEAN
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { person_nearby: true, max_distance_m: 0.3 }
-    description: "Press the body against a person's leg and rub or lean — affectionate contact-seeking."
-
-  # ── ACT_NUDGE_HAND_WITH_HEAD ───────────────────────────────────────────────
-  ACT_NUDGE_HAND_WITH_HEAD:
-    unit_id: ACT_NUDGE_HAND_WITH_HEAD
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { person_nearby: true, max_distance_m: 0.3 }
-    description: "Push the top of the head or muzzle under a person's hand — soliciting pets."
-
-  # ── ACT_SIT_OR_LIE_AT_FEET ─────────────────────────────────────────────────
-  ACT_SIT_OR_LIE_AT_FEET:
-    unit_id: ACT_SIT_OR_LIE_AT_FEET
-    unit_type: composite_action
-    controller: posture
-    timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { person_nearby: true, max_distance_m: 0.5 }
-    description: "Settle into a sit or lie-down position at a person's feet — calm, close companionship."
-
-  # ── ACT_LICK_HAND_OR_FACE ──────────────────────────────────────────────────
-  ACT_LICK_HAND_OR_FACE:
-    unit_id: ACT_LICK_HAND_OR_FACE
-    unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { person_nearby: true, max_distance_m: 0.2 }
-    description: "Extend tongue to lick a person's hand or face — affectionate grooming and bonding."
-
-  # ── ACT_DROP_TOY_IN_FRONT_OF_OWNER ─────────────────────────────────────────
-  ACT_DROP_TOY_IN_FRONT_OF_OWNER:
-    unit_id: ACT_DROP_TOY_IN_FRONT_OF_OWNER
-    unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { toy_in_mouth: true, owner_visible: true }
-    description: "Carry a toy to the owner's feet and release it — an invitation to play."
-
-  # ── ACT_WHINE_OR_BARK_SOFTLY ───────────────────────────────────────────────
-  ACT_WHINE_OR_BARK_SOFTLY:
-    unit_id: ACT_WHINE_OR_BARK_SOFTLY
-    unit_type: atomic_action
-    controller: audio
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: ""
-    conditions: { person_visible: true }
-    description: "Emit a soft whine or single low bark to get the owner's attention."
-
-  # ── ACT_PAW_AT_ARM_OR_PANTS ────────────────────────────────────────────────
-  ACT_PAW_AT_ARM_OR_PANTS:
-    unit_id: ACT_PAW_AT_ARM_OR_PANTS
-    unit_type: atomic_action
-    controller: paw
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { person_nearby: true, max_distance_m: 0.5 }
-    description: "Reach out and paw at a person's arm or pants leg — attention-seeking behavior."
-
-  # ── ACT_JUMP_ON_PERSON ─────────────────────────────────────────────────────
-  ACT_JUMP_ON_PERSON:
-    unit_id: ACT_JUMP_ON_PERSON
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { person_nearby: true, max_distance_m: 0.8 }
-    description: "Spring up using hind legs and place front paws on a person — enthusiastic greeting."
-
-  # ── ACT_FOLLOW_AND_CLING ───────────────────────────────────────────────────
-  ACT_FOLLOW_AND_CLING:
-    unit_id: ACT_FOLLOW_AND_CLING
-    unit_type: task
-    controller: motion
-    timeout_sec: 15.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { person_visible: true }
-    description: "Follow a person closely and cling to their side — separation-anxiety or strong attachment behavior."
-
-  # ╔════════════════════════════════════════════════════════════════════════════╗
-  # ║  SECTION I: Play-sending / play-invitation actions                       ║
-  # ╚════════════════════════════════════════════════════════════════════════════╝
-
-  # ── ACT_PLAY_BOW_INVITE ────────────────────────────────────────────────────
-  ACT_PLAY_BOW_INVITE:
-    unit_id: ACT_PLAY_BOW_INVITE
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { playmate_nearby: true }
-    description: "Perform a play bow directed at a person or animal — unambiguous invitation to engage in play."
-
-  # ── ACT_SHAKE_TOY_WITH_MOUTH ───────────────────────────────────────────────
-  ACT_SHAKE_TOY_WITH_MOUTH:
-    unit_id: ACT_SHAKE_TOY_WITH_MOUTH
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { toy_in_mouth: true }
-    description: "Grip a toy in the mouth and shake the head rapidly side-to-side — play-display behavior."
-
-  # ── ACT_RUN_IN_CIRCLES_OR_ZOOMIES ──────────────────────────────────────────
+    interrupt_policy: safe_point
   ACT_RUN_IN_CIRCLES_OR_ZOOMIES:
     unit_id: ACT_RUN_IN_CIRCLES_OR_ZOOMIES
     unit_type: composite_action
     controller: motion
     timeout_sec: 8.0
-    interrupt_policy: safe
-    from_postures: [standing]
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
     to_posture: standing
-    conditions: { open_space: true }
-    description: "Run at high speed in large circles or unpredictable patterns — frenetic random activity periods (FRAPs)."
-
-  # ── ACT_NIP_GENTLY_AT_PANTS_OR_HAND ────────────────────────────────────────
-  ACT_NIP_GENTLY_AT_PANTS_OR_HAND:
-    unit_id: ACT_NIP_GENTLY_AT_PANTS_OR_HAND
+    conditions:
+      open_space: true
+    description: Run at high speed in large circles or unpredictable patterns — frenetic random activity periods (FRAPs).
+  ACT_CARRY_TOY_AND_WAG_TAIL_IN_FRONT_OF_OWNER:
+    unit_id: ACT_CARRY_TOY_AND_WAG_TAIL_IN_FRONT_OF_OWNER
     unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 1.5
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { person_nearby: true, max_distance_m: 0.3 }
-    description: "Use the front teeth to give a soft, inhibited nip at pants or hand — playful mouthing."
-
-  # ── ACT_PLACE_PAW_ON_KNEE ──────────────────────────────────────────────────
-  ACT_PLACE_PAW_ON_KNEE:
-    unit_id: ACT_PLACE_PAW_ON_KNEE
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_SIDE_HOP_WITH_PLAY_POSTURE:
+    unit_id: ACT_SIDE_HOP_WITH_PLAY_POSTURE
     unit_type: atomic_action
-    controller: paw
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [sitting, standing]
-    to_posture: ""
-    conditions: { person_nearby: true, max_distance_m: 0.5 }
-    description: "Lift one front paw and gently place it on a person's knee — polite request for attention."
-
-  # ╔════════════════════════════════════════════════════════════════════════════╗
-  # ║  SECTION J: Explore-environment actions                                  ║
-  # ╚════════════════════════════════════════════════════════════════════════════╝
-
-  # ── ACT_TROT_AND_LOOK_AROUND ───────────────────────────────────────────────
-  ACT_TROT_AND_LOOK_AROUND:
-    unit_id: ACT_TROT_AND_LOOK_AROUND
-    unit_type: composite_action
-    controller: motion
-    timeout_sec: 8.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { open_space: true }
-    description: "Trot at a moderate pace while actively turning the head to scan the surroundings."
-
-  # ── ACT_WALK_SLOWLY_AND_SNIFF_GROUND ───────────────────────────────────────
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_CARRY_LEASH_TO_OWNER:
+    unit_id: ACT_CARRY_LEASH_TO_OWNER
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_PAW_AT_BOWL_OR_TREAT_CABINET:
+    unit_id: ACT_PAW_AT_BOWL_OR_TREAT_CABINET
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_WAIT_BY_BOWL_OR_TREAT_CABINET:
+    unit_id: ACT_WAIT_BY_BOWL_OR_TREAT_CABINET
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_NUDGE_OWNER_AND_LOOK_AT_FOOD_OR_DOOR:
+    unit_id: ACT_NUDGE_OWNER_AND_LOOK_AT_FOOD_OR_DOOR
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_SIT_BY_DOOR_AND_LOOK_BACK_AT_OWNER:
+    unit_id: ACT_SIT_BY_DOOR_AND_LOOK_BACK_AT_OWNER
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    to_posture: sitting
+  ACT_CIRCLE_EMPTY_BOWL_OR_WATER_DISH:
+    unit_id: ACT_CIRCLE_EMPTY_BOWL_OR_WATER_DISH
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_FOLLOW_AND_STAY_CLOSE_TO_OWNER:
+    unit_id: ACT_FOLLOW_AND_STAY_CLOSE_TO_OWNER
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_SIT_IN_FRONT_OF_OWNER_AND_LOOK_UP:
+    unit_id: ACT_SIT_IN_FRONT_OF_OWNER_AND_LOOK_UP
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    to_posture: sitting
+  ACT_PLACE_FRONT_PAWS_ON_OWNER_FOR_ATTENTION:
+    unit_id: ACT_PLACE_FRONT_PAWS_ON_OWNER_FOR_ATTENTION
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_WHINE_OR_VOCALIZE_SOFTLY:
+    unit_id: ACT_WHINE_OR_VOCALIZE_SOFTLY
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_NUDGE_OR_RUB_AGAINST_OWNER_HAND:
+    unit_id: ACT_NUDGE_OR_RUB_AGAINST_OWNER_HAND
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_ROLL_OVER_FOR_BELLY_RUB:
+    unit_id: ACT_ROLL_OVER_FOR_BELLY_RUB
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_RUB_AGAINST_LEG_OR_LEAN_ON_OWNER:
+    unit_id: ACT_RUB_AGAINST_LEG_OR_LEAN_ON_OWNER
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_TROT_STOP_AND_SNIFF:
+    unit_id: ACT_TROT_STOP_AND_SNIFF
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
   ACT_WALK_SLOWLY_AND_SNIFF_GROUND:
     unit_id: ACT_WALK_SLOWLY_AND_SNIFF_GROUND
     unit_type: composite_action
     controller: motion
     timeout_sec: 10.0
-    interrupt_policy: safe
-    from_postures: [standing]
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
     to_posture: standing
     conditions: {}
-    description: "Walk at a slow pace with nose close to the ground, sniffing continuously as you go."
-
-  # ── ACT_CRAWL_THROUGH_LOW_GAP ──────────────────────────────────────────────
+    description: Walk at a slow pace with nose close to the ground, sniffing continuously as you go.
   ACT_CRAWL_THROUGH_LOW_GAP:
     unit_id: ACT_CRAWL_THROUGH_LOW_GAP
     unit_type: composite_action
     controller: motion
     timeout_sec: 6.0
-    interrupt_policy: unsafe
-    from_postures: [standing, lying]
+    interrupt_policy: non_interruptible
+    from_postures:
+    - standing
+    - lying
     to_posture: standing
-    conditions: { low_gap_detected: true, clearance_ok: true }
-    description: "Lower the body and crawl under or through a low opening or gap."
-
-  # ── ACT_STAND_AND_SCRATCH_HIGH ─────────────────────────────────────────────
+    conditions:
+      low_gap_detected: true
+      clearance_ok: true
+    description: Lower the body and crawl under or through a low opening or gap.
   ACT_STAND_AND_SCRATCH_HIGH:
     unit_id: ACT_STAND_AND_SCRATCH_HIGH
     unit_type: atomic_action
     controller: paw
     timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { vertical_surface_nearby: true }
-    description: "Stand on hind legs or stretch up and scratch a high surface like a wall or fence."
-
-  # ── ACT_SCRATCH_DOOR_OR_FENCE ──────────────────────────────────────────────
-  ACT_SCRATCH_DOOR_OR_FENCE:
-    unit_id: ACT_SCRATCH_DOOR_OR_FENCE
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    to_posture: ''
+    conditions:
+      vertical_surface_nearby: true
+    description: Stand on hind legs or stretch up and scratch a high surface like a wall or fence.
+  ACT_PATROL_ALONG_WALL:
+    unit_id: ACT_PATROL_ALONG_WALL
     unit_type: atomic_action
-    controller: paw
     timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { door_or_fence_nearby: true, max_distance_m: 0.5 }
-    description: "Scratch repeatedly at a door or fence — attempt to open, pass through, or mark."
-
-  # ── ACT_FIND_COOL_SPOT_AND_LIE_DOWN ────────────────────────────────────────
-  ACT_FIND_COOL_SPOT_AND_LIE_DOWN:
-    unit_id: ACT_FIND_COOL_SPOT_AND_LIE_DOWN
-    unit_type: task
-    controller: nav
-    timeout_sec: 15.0
-    interrupt_policy: safe
-    from_postures: [standing]
+    interrupt_policy: safe_point
+  ACT_FIND_PLACE_TO_LIE_DOWN:
+    unit_id: ACT_FIND_PLACE_TO_LIE_DOWN
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
     to_posture: lying
-    conditions: { temperature_high: true }
-    description: "Search for a cool surface (tile, shade) in the environment and lie down on it to cool off."
-
-  # ╔════════════════════════════════════════════════════════════════════════════╗
-  # ║  SECTION K: Explore and interact with objects                            ║
-  # ╚════════════════════════════════════════════════════════════════════════════╝
-
-  # ── ACT_SNIFF_OBJECT ───────────────────────────────────────────────────────
   ACT_SNIFF_OBJECT:
     unit_id: ACT_SNIFF_OBJECT
     unit_type: atomic_action
     controller: head
     timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { object_nearby: true, max_distance_m: 0.3 }
-    description: "Bring the nose close to an object and sniff it thoroughly to gather scent information."
-
-  # ── ACT_PUSH_OBJECT_WITH_PAW ───────────────────────────────────────────────
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    - sitting
+    to_posture: ''
+    conditions:
+      object_nearby: true
+      max_distance_m: 0.3
+    description: Bring the nose close to an object and sniff it thoroughly to gather scent information.
   ACT_PUSH_OBJECT_WITH_PAW:
     unit_id: ACT_PUSH_OBJECT_WITH_PAW
     unit_type: atomic_action
     controller: paw
     timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { object_nearby: true, max_distance_m: 0.5 }
-    description: "Use a front paw to push or nudge an object — testing if it moves or reacts."
-
-  # ── ACT_SCRATCH_OBJECT_GENTLY ──────────────────────────────────────────────
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    - sitting
+    to_posture: ''
+    conditions:
+      object_nearby: true
+      max_distance_m: 0.5
+    description: Use a front paw to push or nudge an object — testing if it moves or reacts.
   ACT_SCRATCH_OBJECT_GENTLY:
     unit_id: ACT_SCRATCH_OBJECT_GENTLY
     unit_type: atomic_action
     controller: paw
     timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { object_nearby: true, max_distance_m: 0.5 }
-    description: "Gently scratch the surface of an object with a paw — exploratory tactile investigation."
-
-  # ── ACT_CARRY_AND_HIDE_OBJECT ──────────────────────────────────────────────
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    - sitting
+    to_posture: ''
+    conditions:
+      object_nearby: true
+      max_distance_m: 0.5
+    description: Gently scratch the surface of an object with a paw — exploratory tactile investigation.
   ACT_CARRY_AND_HIDE_OBJECT:
     unit_id: ACT_CARRY_AND_HIDE_OBJECT
     unit_type: composite_action
     controller: mouth
     timeout_sec: 10.0
-    interrupt_policy: safe
-    from_postures: [standing]
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
     to_posture: standing
-    conditions: { object_in_mouth: true, hiding_spot_known: true }
-    description: "Pick up an object, carry it away, and deposit it in a hidden or preferred spot."
-
-  # ── ACT_CARRY_AND_DROP_OBJECT_AGAIN ────────────────────────────────────────
+    conditions:
+      object_in_mouth: true
+      hiding_spot_known: true
+    description: Pick up an object, carry it away, and deposit it in a hidden or preferred spot.
   ACT_CARRY_AND_DROP_OBJECT_AGAIN:
     unit_id: ACT_CARRY_AND_DROP_OBJECT_AGAIN
     unit_type: composite_action
     controller: mouth
     timeout_sec: 6.0
-    interrupt_policy: safe
-    from_postures: [standing]
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
     to_posture: standing
-    conditions: { object_in_mouth: true }
-    description: "Pick up an object, carry it a short distance, drop it, then pick it up again — repetitive play."
-
-  # ── ACT_TOUCH_OR_CARRY_OBJECT_WITH_MOUTH ───────────────────────────────────
+    conditions:
+      object_in_mouth: true
+    description: Pick up an object, carry it a short distance, drop it, then pick it up again — repetitive play.
   ACT_TOUCH_OR_CARRY_OBJECT_WITH_MOUTH:
     unit_id: ACT_TOUCH_OR_CARRY_OBJECT_WITH_MOUTH
     unit_type: composite_action
     controller: mouth
     timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { object_nearby: true, max_distance_m: 0.4 }
-    description: "Use the mouth to touch, mouth, or pick up and carry an object."
-
-  # ── ACT_BARK_AT_OBJECT ─────────────────────────────────────────────────────
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    - sitting
+    to_posture: ''
+    conditions:
+      object_nearby: true
+      max_distance_m: 0.4
+    description: Use the mouth to touch, mouth, or pick up and carry an object.
   ACT_BARK_AT_OBJECT:
     unit_id: ACT_BARK_AT_OBJECT
     unit_type: atomic_action
     controller: vocal
     timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { object_nearby: true, max_distance_m: 2.0 }
-    description: "Bark repeatedly at an object — alarm, curiosity, or frustration toward an unfamiliar item."
-
-  # ── ACT_KNOCK_OVER_OBJECT ──────────────────────────────────────────────────
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    - sitting
+    to_posture: ''
+    conditions:
+      object_nearby: true
+      max_distance_m: 2.0
+    description: Bark repeatedly at an object — alarm, curiosity, or frustration toward an unfamiliar item.
   ACT_KNOCK_OVER_OBJECT:
     unit_id: ACT_KNOCK_OVER_OBJECT
     unit_type: atomic_action
     controller: paw
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { object_nearby: true, object_knockable: true }
-    description: "Use paws or body to deliberately knock over an upright object."
-
-  # ── ACT_NIBBLE_OBJECT ──────────────────────────────────────────────────────
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    to_posture: ''
+    conditions:
+      object_nearby: true
+      object_knockable: true
+    description: Use paws or body to deliberately knock over an upright object.
   ACT_NIBBLE_OBJECT:
     unit_id: ACT_NIBBLE_OBJECT
     unit_type: atomic_action
     controller: mouth
     timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: ""
-    conditions: { object_nearby: true, max_distance_m: 0.3 }
-    description: "Use the front teeth to gently nibble or gnaw on an object — investigative or comfort chewing."
-
-  # ╔════════════════════════════════════════════════════════════════════════════╗
-  # ║  SECTION L: Explore and interact with slippers / socks                   ║
-  # ╚════════════════════════════════════════════════════════════════════════════╝
-
-  # ── ACT_IGNORE_SLIPPERS_OR_SOCKS ───────────────────────────────────────────
-  ACT_IGNORE_SLIPPERS_OR_SOCKS:
-    unit_id: ACT_IGNORE_SLIPPERS_OR_SOCKS
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    - sitting
+    - lying
+    to_posture: ''
+    conditions:
+      object_nearby: true
+      max_distance_m: 0.3
+    description: Use the front teeth to gently nibble or gnaw on an object — investigative or comfort chewing.
+  ACT_IGNORE_SLIPPERS_SOCKS_OR_TOY:
+    unit_id: ACT_IGNORE_SLIPPERS_SOCKS_OR_TOY
     unit_type: policy
-    controller: meta
     timeout_sec: 0.0
-    interrupt_policy: safe
-    from_postures: []
-    to_posture: ""
-    conditions: { slippers_or_socks_nearby: true }
-    description: "Policy decision: do not engage with slippers or socks even if detected — trained leave-it behavior."
-
-  # ── ACT_BITE_SLIPPERS_OR_SOCKS ─────────────────────────────────────────────
-  ACT_BITE_SLIPPERS_OR_SOCKS:
-    unit_id: ACT_BITE_SLIPPERS_OR_SOCKS
+    interrupt_policy: immediate
+    effect:
+      complete_stage_without_motion: true
+  ACT_BITE_AND_SHAKE_SLIPPERS_SOCKS_OR_TOY:
+    unit_id: ACT_BITE_AND_SHAKE_SLIPPERS_SOCKS_OR_TOY
     unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { slippers_or_socks_nearby: true, max_distance_m: 0.3 }
-    description: "Grip a slipper or sock in the mouth and bite down or chew on it."
-
-  # ── ACT_POUNCE_ON_SLIPPERS_OR_SOCKS ────────────────────────────────────────
-  ACT_POUNCE_ON_SLIPPERS_OR_SOCKS:
-    unit_id: ACT_POUNCE_ON_SLIPPERS_OR_SOCKS
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_POUNCE_ON_SLIPPERS_SOCKS_OR_TOY:
+    unit_id: ACT_POUNCE_ON_SLIPPERS_SOCKS_OR_TOY
     unit_type: atomic_action
-    controller: motion
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { slippers_or_socks_nearby: true, max_distance_m: 1.0 }
-    description: "Spring forward and land with front paws on a slipper or sock — predatory-play pounce."
-
-  # ── ACT_CARRY_SLIPPERS_OR_SOCKS_TO_PERSON ──────────────────────────────────
-  ACT_CARRY_SLIPPERS_OR_SOCKS_TO_PERSON:
-    unit_id: ACT_CARRY_SLIPPERS_OR_SOCKS_TO_PERSON
-    unit_type: task
-    controller: mouth
-    timeout_sec: 12.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { slippers_or_socks_in_mouth: true, person_visible: true }
-    description: "Pick up a slipper or sock and carry it to a person — retrieval or playful offering."
-
-  # ── ACT_SCRATCH_SLIPPERS_OR_SOCKS_WITH_PAW ─────────────────────────────────
-  ACT_SCRATCH_SLIPPERS_OR_SOCKS_WITH_PAW:
-    unit_id: ACT_SCRATCH_SLIPPERS_OR_SOCKS_WITH_PAW
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_CARRY_SLIPPERS_SOCKS_OR_TOY_TO_OWNER:
+    unit_id: ACT_CARRY_SLIPPERS_SOCKS_OR_TOY_TO_OWNER
     unit_type: atomic_action
-    controller: paw
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { slippers_or_socks_nearby: true, max_distance_m: 0.5 }
-    description: "Use front paws to scratch at a slipper or sock — bat it around or try to uncover it."
-
-  # ── ACT_SNIFF_SLIPPERS_OR_SOCKS ────────────────────────────────────────────
-  ACT_SNIFF_SLIPPERS_OR_SOCKS:
-    unit_id: ACT_SNIFF_SLIPPERS_OR_SOCKS
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_PAW_AT_SLIPPERS_SOCKS_OR_TOY:
+    unit_id: ACT_PAW_AT_SLIPPERS_SOCKS_OR_TOY
     unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { slippers_or_socks_nearby: true, max_distance_m: 0.2 }
-    description: "Lower nose to a slipper or sock and sniff deeply — investigating the owner's scent."
-
-  # ╔════════════════════════════════════════════════════════════════════════════╗
-  # ║  SECTION M: Explore and interact with trash can                          ║
-  # ╚════════════════════════════════════════════════════════════════════════════╝
-
-  # ── ACT_IGNORE_TRASH_CAN ───────────────────────────────────────────────────
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_SNIFF_SLIPPERS_SOCKS_OR_TOY:
+    unit_id: ACT_SNIFF_SLIPPERS_SOCKS_OR_TOY
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
   ACT_IGNORE_TRASH_CAN:
     unit_id: ACT_IGNORE_TRASH_CAN
     unit_type: policy
     controller: meta
     timeout_sec: 0.0
-    interrupt_policy: safe
+    interrupt_policy: safe_point
     from_postures: []
-    to_posture: ""
-    conditions: { trash_can_nearby: true }
-    description: "Policy decision: do not engage with the trash can — trained leave-it behavior for waste."
-
-  # ── ACT_RUMMAGE_THROUGH_TRASH_CAN ──────────────────────────────────────────
+    to_posture: ''
+    conditions:
+      trash_can_nearby: true
+    description: 'Policy decision: do not engage with the trash can — trained leave-it behavior for waste.'
   ACT_RUMMAGE_THROUGH_TRASH_CAN:
     unit_id: ACT_RUMMAGE_THROUGH_TRASH_CAN
     unit_type: task
     controller: motion
     timeout_sec: 15.0
-    interrupt_policy: safe
-    from_postures: [standing]
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
     to_posture: standing
-    conditions: { trash_can_nearby: true, trash_can_accessible: true }
-    description: "Explore and rummage through a trash can — pushing it over, sniffing contents, pulling items out."
-
-  # ── ACT_SNIFF_TRASH_CAN ────────────────────────────────────────────────────
+    conditions:
+      trash_can_nearby: true
+      trash_can_accessible: true
+    description: Explore and rummage through a trash can — pushing it over, sniffing contents, pulling items out.
   ACT_SNIFF_TRASH_CAN:
     unit_id: ACT_SNIFF_TRASH_CAN
     unit_type: atomic_action
     controller: head
     timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { trash_can_nearby: true, max_distance_m: 0.3 }
-    description: "Approach and sniff the exterior of the trash can to assess its contents."
-
-  # ╔════════════════════════════════════════════════════════════════════════════╗
-  # ║  SECTION N: Explore and interact with delivery box                       ║
-  # ╚════════════════════════════════════════════════════════════════════════════╝
-
-  # ── ACT_IGNORE_DELIVERY_BOX ────────────────────────────────────────────────
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    to_posture: ''
+    conditions:
+      trash_can_nearby: true
+      max_distance_m: 0.3
+    description: Approach and sniff the exterior of the trash can to assess its contents.
   ACT_IGNORE_DELIVERY_BOX:
     unit_id: ACT_IGNORE_DELIVERY_BOX
     unit_type: policy
     controller: meta
     timeout_sec: 0.0
-    interrupt_policy: safe
+    interrupt_policy: safe_point
     from_postures: []
-    to_posture: ""
-    conditions: { delivery_box_nearby: true }
-    description: "Policy decision: do not engage with delivery boxes — trained impulse control."
-
-  # ── ACT_SNIFF_DELIVERY_BOX ─────────────────────────────────────────────────
+    to_posture: ''
+    conditions:
+      delivery_box_nearby: true
+    description: 'Policy decision: do not engage with delivery boxes — trained impulse control.'
   ACT_SNIFF_DELIVERY_BOX:
     unit_id: ACT_SNIFF_DELIVERY_BOX
     unit_type: atomic_action
     controller: head
     timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { delivery_box_nearby: true, max_distance_m: 0.3 }
-    description: "Sniff a delivery box thoroughly — checking for interesting scents from outside."
-
-  # ── ACT_BITE_DELIVERY_BOX ──────────────────────────────────────────────────
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    to_posture: ''
+    conditions:
+      delivery_box_nearby: true
+      max_distance_m: 0.3
+    description: Sniff a delivery box thoroughly — checking for interesting scents from outside.
   ACT_BITE_DELIVERY_BOX:
     unit_id: ACT_BITE_DELIVERY_BOX
     unit_type: atomic_action
     controller: mouth
     timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { delivery_box_nearby: true, max_distance_m: 0.3 }
-    description: "Bite into the corner or edge of a delivery box — attempting to open or shred it."
-
-  # ── ACT_CARRY_DELIVERY_BOX_TO_PERSON ───────────────────────────────────────
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    - sitting
+    to_posture: ''
+    conditions:
+      delivery_box_nearby: true
+      max_distance_m: 0.3
+    description: Bite into the corner or edge of a delivery box — attempting to open or shred it.
   ACT_CARRY_DELIVERY_BOX_TO_PERSON:
     unit_id: ACT_CARRY_DELIVERY_BOX_TO_PERSON
     unit_type: task
     controller: mouth
     timeout_sec: 12.0
-    interrupt_policy: safe
-    from_postures: [standing]
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
     to_posture: standing
-    conditions: { delivery_box_in_mouth: true, person_visible: true }
-    description: "Pick up a delivery box and carry it to a person — helpful retrieval behavior."
-
-  # ── ACT_SCRATCH_DELIVERY_BOX_WITH_PAW ──────────────────────────────────────
+    conditions:
+      delivery_box_in_mouth: true
+      person_visible: true
+    description: Pick up a delivery box and carry it to a person — helpful retrieval behavior.
   ACT_SCRATCH_DELIVERY_BOX_WITH_PAW:
     unit_id: ACT_SCRATCH_DELIVERY_BOX_WITH_PAW
     unit_type: atomic_action
     controller: paw
     timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { delivery_box_nearby: true, max_distance_m: 0.5 }
-    description: "Scratch at the surface of a delivery box with a paw — trying to open it or investigate."
-
-  # ╔════════════════════════════════════════════════════════════════════════════╗
-  # ║  SECTION O: Explore and interact with tissue                             ║
-  # ╚════════════════════════════════════════════════════════════════════════════╝
-
-  # ── ACT_IGNORE_TISSUE ──────────────────────────────────────────────────────
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    - sitting
+    to_posture: ''
+    conditions:
+      delivery_box_nearby: true
+      max_distance_m: 0.5
+    description: Scratch at the surface of a delivery box with a paw — trying to open it or investigate.
   ACT_IGNORE_TISSUE:
     unit_id: ACT_IGNORE_TISSUE
     unit_type: policy
     controller: meta
     timeout_sec: 0.0
-    interrupt_policy: safe
+    interrupt_policy: safe_point
     from_postures: []
-    to_posture: ""
-    conditions: { tissue_nearby: true }
-    description: "Policy decision: do not engage with tissues — trained leave-it for paper products."
-
-  # ── ACT_SNIFF_TISSUE ───────────────────────────────────────────────────────
+    to_posture: ''
+    conditions:
+      tissue_nearby: true
+    description: 'Policy decision: do not engage with tissues — trained leave-it for paper products.'
   ACT_SNIFF_TISSUE:
     unit_id: ACT_SNIFF_TISSUE
     unit_type: atomic_action
     controller: head
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { tissue_nearby: true, max_distance_m: 0.2 }
-    description: "Sniff a tissue on the ground or held — investigating the scent."
-
-  # ── ACT_SCRATCH_TISSUE_WITH_PAW ────────────────────────────────────────────
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    to_posture: ''
+    conditions:
+      tissue_nearby: true
+      max_distance_m: 0.2
+    description: Sniff a tissue on the ground or held — investigating the scent.
   ACT_SCRATCH_TISSUE_WITH_PAW:
     unit_id: ACT_SCRATCH_TISSUE_WITH_PAW
     unit_type: atomic_action
     controller: paw
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { tissue_nearby: true, max_distance_m: 0.5 }
-    description: "Paw at a tissue — batting it around or shredding it."
-
-  # ── ACT_CARRY_TISSUE_TO_PERSON ─────────────────────────────────────────────
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    - sitting
+    to_posture: ''
+    conditions:
+      tissue_nearby: true
+      max_distance_m: 0.5
+    description: Paw at a tissue — batting it around or shredding it.
   ACT_CARRY_TISSUE_TO_PERSON:
     unit_id: ACT_CARRY_TISSUE_TO_PERSON
     unit_type: task
     controller: mouth
     timeout_sec: 10.0
-    interrupt_policy: safe
-    from_postures: [standing]
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
     to_posture: standing
-    conditions: { tissue_in_mouth: true, person_visible: true }
-    description: "Pick up a tissue and carry it to a person — retrieval behavior."
-
-  # ╔════════════════════════════════════════════════════════════════════════════╗
-  # ║  SECTION P: Explore and interact with door                               ║
-  # ╚════════════════════════════════════════════════════════════════════════════╝
-
-  # ── ACT_IGNORE_DOOR ────────────────────────────────────────────────────────
+    conditions:
+      tissue_in_mouth: true
+      person_visible: true
+    description: Pick up a tissue and carry it to a person — retrieval behavior.
   ACT_IGNORE_DOOR:
     unit_id: ACT_IGNORE_DOOR
     unit_type: policy
     controller: meta
     timeout_sec: 0.0
-    interrupt_policy: safe
+    interrupt_policy: safe_point
     from_postures: []
-    to_posture: ""
-    conditions: { door_nearby: true }
-    description: "Policy decision: do not engage with a closed door — trained calm behavior near exits."
-
-  # ── ACT_LEAN_AGAINST_DOOR ──────────────────────────────────────────────────
+    to_posture: ''
+    conditions:
+      door_nearby: true
+    description: 'Policy decision: do not engage with a closed door — trained calm behavior near exits.'
   ACT_LEAN_AGAINST_DOOR:
     unit_id: ACT_LEAN_AGAINST_DOOR
     unit_type: atomic_action
     controller: motion
     timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { door_nearby: true, max_distance_m: 0.3 }
-    description: "Press the body or shoulder against a closed door — expressing desire to go through."
-
-  # ── ACT_LIE_BY_DOOR ────────────────────────────────────────────────────────
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    to_posture: ''
+    conditions:
+      door_nearby: true
+      max_distance_m: 0.3
+    description: Press the body or shoulder against a closed door — expressing desire to go through.
   ACT_LIE_BY_DOOR:
     unit_id: ACT_LIE_BY_DOOR
     unit_type: atomic_action
     controller: posture
     timeout_sec: 10.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    - sitting
     to_posture: lying
-    conditions: { door_nearby: true, max_distance_m: 0.5 }
-    description: "Lie down beside a door and wait — patient behavior, often before a known walk time."
-
-  # ── ACT_SCRATCH_DOOR ───────────────────────────────────────────────────────
+    conditions:
+      door_nearby: true
+      max_distance_m: 0.5
+    description: Lie down beside a door and wait — patient behavior, often before a known walk time.
   ACT_SCRATCH_DOOR:
     unit_id: ACT_SCRATCH_DOOR
     unit_type: atomic_action
     controller: paw
     timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { door_nearby: true, max_distance_m: 0.5 }
-    description: "Scratch at the surface of a closed door — request to be let in or out."
-
-  # ── ACT_SNIFF_AROUND_DOOR ──────────────────────────────────────────────────
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    to_posture: ''
+    conditions:
+      door_nearby: true
+      max_distance_m: 0.5
+    description: Scratch at the surface of a closed door — request to be let in or out.
   ACT_SNIFF_AROUND_DOOR:
     unit_id: ACT_SNIFF_AROUND_DOOR
     unit_type: atomic_action
     controller: head
     timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { door_nearby: true, max_distance_m: 0.3 }
-    description: "Sniff the edges, gap, and threshold of a door — checking for scents from the other side."
-
-  # ╔════════════════════════════════════════════════════════════════════════════╗
-  # ║  SECTION Q: Emotion — Calm actions                                       ║
-  # ╚════════════════════════════════════════════════════════════════════════════╝
-
-  # ── ACT_LIE_FLAT_ON_BELLY ──────────────────────────────────────────────────
-  ACT_LIE_FLAT_ON_BELLY:
-    unit_id: ACT_LIE_FLAT_ON_BELLY
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    to_posture: ''
+    conditions:
+      door_nearby: true
+      max_distance_m: 0.3
+    description: Sniff the edges, gap, and threshold of a door — checking for scents from the other side.
+  ACT_VISUALLY_TRACK_FOOD_IN_HAND:
+    unit_id: ACT_VISUALLY_TRACK_FOOD_IN_HAND
     unit_type: atomic_action
-    controller: posture
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: lying
-    conditions: { flat_surface: true }
-    description: "Lower the body until the belly is flat against the ground, legs splayed or tucked."
-
-  # ── ACT_LIE_ON_SIDE ────────────────────────────────────────────────────────
-  ACT_LIE_ON_SIDE:
-    unit_id: ACT_LIE_ON_SIDE
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: lying
-    conditions: { flat_surface: true }
-    description: "Roll or settle onto one side with legs extended — relaxed, vulnerable resting posture."
-
-  # ── ACT_LICK_PAWS ──────────────────────────────────────────────────────────
-  ACT_LICK_PAWS:
-    unit_id: ACT_LICK_PAWS
-    unit_type: atomic_action
-    controller: mouth
     timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [lying, sitting]
-    to_posture: ""
-    conditions: {}
-    description: "Repeatedly lick front paws — self-soothing grooming behavior common in calm states."
-
-  # ── ACT_YAWN_SLOWLY ────────────────────────────────────────────────────────
-  ACT_YAWN_SLOWLY:
-    unit_id: ACT_YAWN_SLOWLY
+    interrupt_policy: safe_point
+  ACT_CIRCLE_AROUND_OWNER:
+    unit_id: ACT_CIRCLE_AROUND_OWNER
     unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [lying, sitting, standing]
-    to_posture: ""
-    conditions: {}
-    description: "Open the mouth wide in a slow, deliberate yawn — calming signal in dog body language."
-
-  # ── ACT_LIE_BELLY_UP ───────────────────────────────────────────────────────
-  ACT_LIE_BELLY_UP:
-    unit_id: ACT_LIE_BELLY_UP
+    timeout_sec: 6.0
+    interrupt_policy: safe_point
+  ACT_STAND_UP_AND_PAW_AT_OWNER_LEG:
+    unit_id: ACT_STAND_UP_AND_PAW_AT_OWNER_LEG
     unit_type: atomic_action
-    controller: posture
-    timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [lying]
-    to_posture: lying
-    conditions: { flat_surface: true, secure_environment: true }
-    description: "Roll onto the back with belly exposed to the air — ultimate calm and trust posture."
-
-  # ── ACT_WAIT_BY_DOOR ───────────────────────────────────────────────────────
-  ACT_WAIT_BY_DOOR:
-    unit_id: ACT_WAIT_BY_DOOR
-    unit_type: task
-    controller: posture
-    timeout_sec: 15.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: ""
-    conditions: { door_nearby: true }
-    description: "Wait calmly by a door — sitting or lying, watching for it to open."
-
-  # ── ACT_PATROL_SURROUNDINGS_SLOWLY ─────────────────────────────────────────
-  ACT_PATROL_SURROUNDINGS_SLOWLY:
-    unit_id: ACT_PATROL_SURROUNDINGS_SLOWLY
-    unit_type: task
-    controller: motion
-    timeout_sec: 15.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { open_space: true }
-    description: "Walk a slow, deliberate patrol of the immediate area, scanning calmly."
-
-  # ── ACT_LIE_ON_SIDE_BESIDE_PERSON ──────────────────────────────────────────
-  ACT_LIE_ON_SIDE_BESIDE_PERSON:
-    unit_id: ACT_LIE_ON_SIDE_BESIDE_PERSON
-    unit_type: task
-    controller: posture
-    timeout_sec: 12.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: lying
-    conditions: { person_nearby: true, max_distance_m: 0.5 }
-    description: "Settle into a side-lying position right next to a person — calm companionship."
-
-  # ── ACT_PAW_AT_OWNER ───────────────────────────────────────────────────────
-  ACT_PAW_AT_OWNER:
-    unit_id: ACT_PAW_AT_OWNER
-    unit_type: atomic_action
-    controller: paw
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { owner_nearby: true, max_distance_m: 0.5 }
-    description: "Gently paw at the owner's arm, leg, or lap — calm attention-seeking."
-
-  # ╔════════════════════════════════════════════════════════════════════════════╗
-  # ║  SECTION R: Emotion — Joy actions                                        ║
-  # ╚════════════════════════════════════════════════════════════════════════════╝
-
-  # ── ACT_SIT_AND_WAG_TAIL_GENTLY ────────────────────────────────────────────
-  ACT_SIT_AND_WAG_TAIL_GENTLY:
-    unit_id: ACT_SIT_AND_WAG_TAIL_GENTLY
-    unit_type: composite_action
-    controller: posture
     timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: sitting
-    conditions: {}
-    description: "Sit down and wag the tail with a slow, gentle, sweeping motion — contented joy."
-
-  # ── ACT_STRETCH_BODY_RELAXEDLY ─────────────────────────────────────────────
-  ACT_STRETCH_BODY_RELAXEDLY:
-    unit_id: ACT_STRETCH_BODY_RELAXEDLY
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing, lying]
-    to_posture: ""
-    conditions: {}
-    description: "Stretch the full body in a relaxed, unhurried way — a happy, comfortable dog."
-
-  # ── ACT_WAG_TAIL_GENTLY ────────────────────────────────────────────────────
-  ACT_WAG_TAIL_GENTLY:
-    unit_id: ACT_WAG_TAIL_GENTLY
-    unit_type: atomic_action
-    controller: tail
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: ""
-    conditions: {}
-    description: "Move the tail side-to-side in a gentle, relaxed arc — low-intensity joy signal."
-
-  # ── ACT_STEP_EXCITEDLY_IN_PLACE ────────────────────────────────────────────
-  ACT_STEP_EXCITEDLY_IN_PLACE:
-    unit_id: ACT_STEP_EXCITEDLY_IN_PLACE
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: {}
-    description: "Shift weight from paw to paw rapidly while staying in place — excited anticipation."
-
-  # ── ACT_SWAY_BODY_WITH_WAGGING_TAIL ────────────────────────────────────────
-  ACT_SWAY_BODY_WITH_WAGGING_TAIL:
-    unit_id: ACT_SWAY_BODY_WITH_WAGGING_TAIL
-    unit_type: composite_action
-    controller: motion
-    timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: {}
-    description: "Sway the entire body side-to-side in sync with a wagging tail — whole-body happy wag."
-
-  # ── ACT_WAG_TAIL_FAST_AND_STEP_IN_PLACE ────────────────────────────────────
-  ACT_WAG_TAIL_FAST_AND_STEP_IN_PLACE:
-    unit_id: ACT_WAG_TAIL_FAST_AND_STEP_IN_PLACE
-    unit_type: composite_action
-    controller: motion
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: {}
-    description: "Wag the tail rapidly while stepping in place — mid-level excited joy."
-
-  # ── ACT_HOP_IN_PLACE_WITH_FRONT_PAWS_UP ────────────────────────────────────
-  ACT_HOP_IN_PLACE_WITH_FRONT_PAWS_UP:
-    unit_id: ACT_HOP_IN_PLACE_WITH_FRONT_PAWS_UP
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [standing]
+    interrupt_policy: safe_point
     to_posture: standing
-    conditions: {}
-    description: "Perform small hops in place, lifting front paws off the ground — bouncy, joyful energy."
-
-  # ── ACT_NUDGE_OWNER_HAND_OR_LEG_WITH_NOSE ──────────────────────────────────
-  ACT_NUDGE_OWNER_HAND_OR_LEG_WITH_NOSE:
-    unit_id: ACT_NUDGE_OWNER_HAND_OR_LEG_WITH_NOSE
+  ACT_SPIN_IN_PLACE:
+    unit_id: ACT_SPIN_IN_PLACE
+    unit_type: atomic_action
+    timeout_sec: 6.0
+    interrupt_policy: safe_point
+  ACT_CHECK_OWNER:
+    unit_id: ACT_CHECK_OWNER
     unit_type: atomic_action
     controller: head
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { owner_nearby: true, max_distance_m: 0.3 }
-    description: "Push the nose against the owner's hand or leg — affectionate, joyful greeting."
-
-  # ── ACT_PLAY_BOW_INVITE (Joy context) ──────────────────────────────────────
-  ACT_PLAY_BOW_INVITE:
-    unit_id: ACT_PLAY_BOW_INVITE
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { playmate_nearby: true }
-    description: "Lower front body with elbows on ground, hindquarters raised — classic joyful play invitation."
-
-  # ── ACT_RUN_BACK_AND_FORTH ─────────────────────────────────────────────────
-  ACT_RUN_BACK_AND_FORTH:
-    unit_id: ACT_RUN_BACK_AND_FORTH
-    unit_type: task
-    controller: motion
-    timeout_sec: 8.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { open_space: true }
-    description: "Run excitedly from one point to another and back repeatedly — joyful, indecisive energy."
-
-  # ── ACT_SPIN_IN_CIRCLE ─────────────────────────────────────────────────────
-  ACT_SPIN_IN_CIRCLE:
-    unit_id: ACT_SPIN_IN_CIRCLE
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: {}
-    description: "Rotate the body in one or more tight circles — high-intensity joy or excitement."
-
-  # ── ACT_RAISE_TAIL_AND_WAG ─────────────────────────────────────────────────
-  ACT_RAISE_TAIL_AND_WAG:
-    unit_id: ACT_RAISE_TAIL_AND_WAG
-    unit_type: composite_action
-    controller: tail
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: {}
-    description: "Raise the tail to a high position and wag enthusiastically — confident, happy posture."
-
-  # ── ACT_POUNCE_FORWARD ─────────────────────────────────────────────────────
-  ACT_POUNCE_FORWARD:
-    unit_id: ACT_POUNCE_FORWARD
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { open_space: true }
-    description: "Spring forward with both front paws landing ahead — excited, playful forward pounce."
-
-  # ── ACT_BARK_SHORT_EXCITED ─────────────────────────────────────────────────
-  ACT_BARK_SHORT_EXCITED:
-    unit_id: ACT_BARK_SHORT_EXCITED
-    unit_type: atomic_action
-    controller: audio
-    timeout_sec: 1.5
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: {}
-    description: "Emit a short, high-pitched bark — joyful vocalization, often during play or greeting."
-
-  # ── ACT_ROLL_OVER_AND_SHOW_BELLY ───────────────────────────────────────────
-  ACT_ROLL_OVER_AND_SHOW_BELLY:
-    unit_id: ACT_ROLL_OVER_AND_SHOW_BELLY
-    unit_type: composite_action
-    controller: posture
-    timeout_sec: 4.0
-    interrupt_policy: unsafe
-    from_postures: [lying]
-    to_posture: lying
-    conditions: { flat_surface: true }
-    description: "Roll from lying onto the back and expose the belly — joyful submission and trust display."
-
-  # ╔════════════════════════════════════════════════════════════════════════════╗
-  # ║  SECTION S: Emotion — Excite actions                                     ║
-  # ╚════════════════════════════════════════════════════════════════════════════╝
-
-  # ── ACT_BEG_FOR_FOOD ───────────────────────────────────────────────────────
-  ACT_BEG_FOR_FOOD:
-    unit_id: ACT_BEG_FOR_FOOD
-    unit_type: composite_action
-    controller: posture
-    timeout_sec: 6.0
-    interrupt_policy: safe
-    from_postures: [sitting, standing]
-    to_posture: ""
-    conditions: { food_visible: true }
-    description: "Assume a sitting or standing begging posture with front paws tucked or raised — food excitement."
-
-  # ── ACT_CARRY_AND_SHAKE ────────────────────────────────────────────────────
-  ACT_CARRY_AND_SHAKE:
-    unit_id: ACT_CARRY_AND_SHAKE
-    unit_type: task
-    controller: mouth
-    timeout_sec: 6.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { object_in_mouth: true }
-    description: "Carry an object while shaking the head — intense play with a toy or found item."
-
-  # ── ACT_WIGGLE_BODY ────────────────────────────────────────────────────────
-  ACT_WIGGLE_BODY:
-    unit_id: ACT_WIGGLE_BODY
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: {}
-    description: "Wiggle and squirm the entire body — full-body excitement, often when greeting."
-
-  # ── ACT_TROT_AND_BOUNCE ────────────────────────────────────────────────────
-  ACT_TROT_AND_BOUNCE:
-    unit_id: ACT_TROT_AND_BOUNCE
-    unit_type: composite_action
-    controller: motion
-    timeout_sec: 6.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { open_space: true }
-    description: "Trot with a bouncy, springy gait — excited, happy movement with extra lift in each step."
-
-  # ── ACT_MOVE_RAPIDLY ───────────────────────────────────────────────────────
-  ACT_MOVE_RAPIDLY:
-    unit_id: ACT_MOVE_RAPIDLY
-    unit_type: task
-    controller: motion
-    timeout_sec: 8.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { open_space: true }
-    description: "Move at a high, sustained pace across the environment — directed excited travel."
-
-  # ── ACT_CIRCLE_AROUND (Excite context) ─────────────────────────────────────
-  ACT_CIRCLE_AROUND:
-    unit_id: ACT_CIRCLE_AROUND
-    unit_type: composite_action
-    controller: motion
     timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: {}
-    description: "Move in rapid circles around a person, object, or open space — excited orbiting behavior."
-
-  # ── ACT_RUN_ZOOMIES ────────────────────────────────────────────────────────
-  ACT_RUN_ZOOMIES:
-    unit_id: ACT_RUN_ZOOMIES
-    unit_type: task
-    controller: motion
-    timeout_sec: 10.0
-    interrupt_policy: unsafe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { open_space: true }
-    description: "Run at top speed in irregular bursts and tight turns — frenetic random activity (zoomies)."
-
-  # ── ACT_BARK_OR_WHINE ──────────────────────────────────────────────────────
-  ACT_BARK_OR_WHINE:
-    unit_id: ACT_BARK_OR_WHINE
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    - sitting
+    - lying
+    to_posture: ''
+    conditions:
+      owner_visible: true
+    description: Frequently glance or turn head toward the owner — seeking reassurance in an anxious state.
+  ACT_SLEEP_BY_FEET:
+    unit_id: ACT_SLEEP_BY_FEET
     unit_type: atomic_action
-    controller: audio
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: ""
-    conditions: {}
-    description: "Emit excited barks or high-pitched whines — vocal expression of high arousal or eagerness."
-
-  # ── ACT_MOUTH_GENTLY ───────────────────────────────────────────────────────
-  ACT_MOUTH_GENTLY:
-    unit_id: ACT_MOUTH_GENTLY
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    to_posture: lying
+  ACT_GUARD_DOOR:
+    unit_id: ACT_GUARD_DOOR
     unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { person_nearby: true, max_distance_m: 0.3 }
-    description: "Gently take a person's hand, sleeve, or object in the mouth without biting down — excited but controlled."
-
-  # ── ACT_FETCH_TOY ──────────────────────────────────────────────────────────
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_STRETCH:
+    unit_id: ACT_STRETCH
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_PATROL:
+    unit_id: ACT_PATROL
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_SPLOOT:
+    unit_id: ACT_SPLOOT
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    to_posture: lying
+  ACT_NUZZLE_HEAD:
+    unit_id: ACT_NUZZLE_HEAD
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_NUZZLE_BODY:
+    unit_id: ACT_NUZZLE_BODY
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_SHOW_BELLY:
+    unit_id: ACT_SHOW_BELLY
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_WINK:
+    unit_id: ACT_WINK
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
   ACT_FETCH_TOY:
     unit_id: ACT_FETCH_TOY
     unit_type: task
     controller: motion
     timeout_sec: 15.0
-    interrupt_policy: safe
-    from_postures: [standing]
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
     to_posture: standing
-    conditions: { toy_thrown: true, toy_visible: true }
-    description: "Run to retrieve a thrown toy, pick it up, and return it — classic fetch behavior."
-
-  # ╔════════════════════════════════════════════════════════════════════════════╗
-  # ║  SECTION T: Emotion — Anxiety actions                                    ║
-  # ╚════════════════════════════════════════════════════════════════════════════╝
-
-  # ── ACT_PACE_BACK_AND_FORTH ────────────────────────────────────────────────
-  ACT_PACE_BACK_AND_FORTH:
-    unit_id: ACT_PACE_BACK_AND_FORTH
-    unit_type: composite_action
-    controller: motion
-    timeout_sec: 10.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: {}
-    description: "Walk back and forth along a fixed path repeatedly — stereotypical anxiety displacement behavior."
-
-  # ── ACT_LICK_LIPS ──────────────────────────────────────────────────────────
-  ACT_LICK_LIPS:
-    unit_id: ACT_LICK_LIPS
+    conditions:
+      toy_thrown: true
+      toy_visible: true
+    description: Run to retrieve a thrown toy, pick it up, and return it — classic fetch behavior.
+  ACT_LICK:
+    unit_id: ACT_LICK
     unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: ""
-    conditions: {}
-    description: "Quickly flick the tongue over the lips — classic canine anxiety/appeasement signal."
-
-  # ── ACT_WHINE_LOW ──────────────────────────────────────────────────────────
-  ACT_WHINE_LOW:
-    unit_id: ACT_WHINE_LOW
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_WAG_TAIL:
+    unit_id: ACT_WAG_TAIL
     unit_type: atomic_action
-    controller: audio
+    controller: tail
     timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: ""
+    interrupt_policy: safe_point
+    from_postures:
+    - lying
+    - sitting
+    - standing
+    to_posture: ''
     conditions: {}
-    description: "Produce a soft, low-pitched whine — anxious vocalization signaling unease."
-
-  # ── ACT_STARE_INTENTLY ─────────────────────────────────────────────────────
-  ACT_STARE_INTENTLY:
-    unit_id: ACT_STARE_INTENTLY
+    description: Move the tail side-to-side with varying speed and amplitude — may occur even during light sleep.
+  ACT_COMFY_STRETCH:
+    unit_id: ACT_COMFY_STRETCH
     unit_type: atomic_action
-    controller: head
     timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { target_visible: true }
-    description: "Fix an unwavering, wide-eyed stare at a target — hypervigilance in anxious state."
-
-  # ── ACT_TILT_HEAD ──────────────────────────────────────────────────────────
-  ACT_TILT_HEAD:
-    unit_id: ACT_TILT_HEAD
+    interrupt_policy: safe_point
+  ACT_TROT_BOUNCE:
+    unit_id: ACT_TROT_BOUNCE
     unit_type: atomic_action
-    controller: head
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: {}
-    description: "Tilt the head to one side — uncertainty or processing an unfamiliar stimulus."
-
-  # ── ACT_SCRATCH_FREQUENTLY ─────────────────────────────────────────────────
-  ACT_SCRATCH_FREQUENTLY:
-    unit_id: ACT_SCRATCH_FREQUENTLY
-    unit_type: atomic_action
-    controller: paw
     timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: ""
-    conditions: {}
-    description: "Scratch the body repeatedly and rapidly — displacement behavior under anxiety or stress."
-
-  # ── ACT_STIFFEN_BODY ───────────────────────────────────────────────────────
-  ACT_STIFFEN_BODY:
-    unit_id: ACT_STIFFEN_BODY
+    interrupt_policy: safe_point
+  ACT_PURR:
+    unit_id: ACT_PURR
     unit_type: atomic_action
-    controller: posture
-    timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: {}
-    description: "Tense all body muscles and hold rigidly — freeze-like anxiety response."
-
-  # ── ACT_TUCK_TAIL ──────────────────────────────────────────────────────────
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_INTERACT_EXPLORE:
+    unit_id: ACT_INTERACT_EXPLORE
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_NON_INTERACT_EXPLORE:
+    unit_id: ACT_NON_INTERACT_EXPLORE
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_JUMP_PAW:
+    unit_id: ACT_JUMP_PAW
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_SPIN_FRONT:
+    unit_id: ACT_SPIN_FRONT
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_NIP_PLAYFUL:
+    unit_id: ACT_NIP_PLAYFUL
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_ZOOMIE_CIRCLE:
+    unit_id: ACT_ZOOMIE_CIRCLE
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_ASK_CUDDLE:
+    unit_id: ACT_ASK_CUDDLE
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_ZOOMIES:
+    unit_id: ACT_ZOOMIES
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_BONE_DANCE:
+    unit_id: ACT_BONE_DANCE
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_BAT_TOY:
+    unit_id: ACT_BAT_TOY
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_SHAKE_TOY:
+    unit_id: ACT_SHAKE_TOY
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_CHASE_TAIL:
+    unit_id: ACT_CHASE_TAIL
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_FETCH_LEASH:
+    unit_id: ACT_FETCH_LEASH
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_PAW_LEG:
+    unit_id: ACT_PAW_LEG
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_WHINE:
+    unit_id: ACT_WHINE
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_SEEK_PETS:
+    unit_id: ACT_SEEK_PETS
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_HIDE_SHRINK:
+    unit_id: ACT_HIDE_SHRINK
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_PACE:
+    unit_id: ACT_PACE
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_WHIMPER:
+    unit_id: ACT_WHIMPER
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_LICK_SELF:
+    unit_id: ACT_LICK_SELF
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_LICK_FACE:
+    unit_id: ACT_LICK_FACE
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_HIDE_BEHIND:
+    unit_id: ACT_HIDE_BEHIND
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_CLING_LEG:
+    unit_id: ACT_CLING_LEG
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
   ACT_TUCK_TAIL:
     unit_id: ACT_TUCK_TAIL
     unit_type: atomic_action
     controller: tail
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    from_postures:
+    - standing
+    - sitting
+    to_posture: ''
     conditions: {}
-    description: "Lower and tuck the tail tightly between the hind legs — classic fear/anxiety posture."
-
-  # ── ACT_DILATE_PUPILS ──────────────────────────────────────────────────────
-  ACT_DILATE_PUPILS:
-    unit_id: ACT_DILATE_PUPILS
+    description: Lower and tuck the tail tightly between the hind legs — classic fear/anxiety posture.
+  ACT_COVER_EYES:
+    unit_id: ACT_COVER_EYES
     unit_type: atomic_action
-    controller: expression
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: []
-    to_posture: ""
-    conditions: {}
-    description: "Widen the pupil diameter — simulated physiological anxiety response (whale eye effect)."
-
-  # ── ACT_HIDE_AWAY ──────────────────────────────────────────────────────────
-  ACT_HIDE_AWAY:
-    unit_id: ACT_HIDE_AWAY
-    unit_type: task
-    controller: motion
-    timeout_sec: 10.0
-    interrupt_policy: unsafe
-    from_postures: [standing]
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_BARK_TENSE:
+    unit_id: ACT_BARK_TENSE
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_FREEZE_SHAKE:
+    unit_id: ACT_FREEZE_SHAKE
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_INTERACT_RESPOND_CALL:
+    unit_id: ACT_INTERACT_RESPOND_CALL
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_BASIC_SIT:
+    unit_id: ACT_BASIC_SIT
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+    to_posture: sitting
+  ACT_BASIC_LIE_DOWN:
+    unit_id: ACT_BASIC_LIE_DOWN
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
     to_posture: lying
-    conditions: { hiding_spot_available: true }
-    description: "Move quickly to a perceived safe hiding spot and conceal the body — anxious retreat."
-
-  # ── ACT_WHINE_HIGH ─────────────────────────────────────────────────────────
-  ACT_WHINE_HIGH:
-    unit_id: ACT_WHINE_HIGH
+  ACT_BASIC_STAND:
+    unit_id: ACT_BASIC_STAND
     unit_type: atomic_action
-    controller: audio
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: ""
-    conditions: {}
-    description: "Produce a high-pitched whine — acute anxiety or distress vocalization."
-
-  # ── ACT_CHECK_OWNER ────────────────────────────────────────────────────────
-  ACT_CHECK_OWNER:
-    unit_id: ACT_CHECK_OWNER
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: ""
-    conditions: { owner_visible: true }
-    description: "Frequently glance or turn head toward the owner — seeking reassurance in an anxious state."
-
-  # ╔════════════════════════════════════════════════════════════════════════════╗
-  # ║  SECTION U: Emotion — Fear actions                                       ║
-  # ╚════════════════════════════════════════════════════════════════════════════╝
-
-  # ── ACT_FREEZE_ALERT ───────────────────────────────────────────────────────
-  ACT_FREEZE_ALERT:
-    unit_id: ACT_FREEZE_ALERT
-    unit_type: atomic_action
-    controller: posture
     timeout_sec: 5.0
-    interrupt_policy: unsafe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: {}
-    description: "Stop all movement abruptly and hold position — ears forward, body tense — fear-alert freeze."
-
-  # ── ACT_WALK_AWAY ──────────────────────────────────────────────────────────
-  ACT_WALK_AWAY:
-    unit_id: ACT_WALK_AWAY
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [standing]
+    interrupt_policy: safe_point
     to_posture: standing
-    conditions: {}
-    description: "Turn and walk away from a perceived threat at a normal pace — avoidance response."
-
-  # ── ACT_RETREAT_WITH_TAIL_TUCKED ───────────────────────────────────────────
-  ACT_RETREAT_WITH_TAIL_TUCKED:
-    unit_id: ACT_RETREAT_WITH_TAIL_TUCKED
-    unit_type: composite_action
-    controller: motion
+  ACT_BASIC_WAIT:
+    unit_id: ACT_BASIC_WAIT
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_INTERACT_APPROACH_OWNER:
+    unit_id: ACT_INTERACT_APPROACH_OWNER
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_INTERACT_FOLLOW_OWNER:
+    unit_id: ACT_INTERACT_FOLLOW_OWNER
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_INTERACT_GIVE_PAW:
+    unit_id: ACT_INTERACT_GIVE_PAW
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_INTERACT_HIGH_FIVE:
+    unit_id: ACT_INTERACT_HIGH_FIVE
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_TRICK_ROLL_OVER:
+    unit_id: ACT_TRICK_ROLL_OVER
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: non_interruptible
+  ACT_TRICK_SPIN:
+    unit_id: ACT_TRICK_SPIN
+    unit_type: atomic_action
     timeout_sec: 6.0
-    interrupt_policy: unsafe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: {}
-    description: "Walk backward or retreat with tail tucked and body lowered — fearful withdrawal."
-
-  # ── ACT_GROWL_LOW ──────────────────────────────────────────────────────────
-  ACT_GROWL_LOW:
-    unit_id: ACT_GROWL_LOW
+    interrupt_policy: non_interruptible
+  ACT_INTERACT_RETURN_OWNER:
+    unit_id: ACT_INTERACT_RETURN_OWNER
     unit_type: atomic_action
-    controller: audio
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: {}
-    description: "Emit a deep, rumbling growl — warning or fear-based defensive vocalization."
-
-  # ── ACT_FLEE_QUICKLY ───────────────────────────────────────────────────────
-  ACT_FLEE_QUICKLY:
-    unit_id: ACT_FLEE_QUICKLY
-    unit_type: task
-    controller: motion
-    timeout_sec: 8.0
-    interrupt_policy: unsafe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { escape_route_available: true }
-    description: "Run at maximum speed away from a threat — panic flight response."
-
-  # ── ACT_AVOID_AND_HIDE ─────────────────────────────────────────────────────
-  ACT_AVOID_AND_HIDE:
-    unit_id: ACT_AVOID_AND_HIDE
-    unit_type: task
-    controller: motion
-    timeout_sec: 10.0
-    interrupt_policy: unsafe
-    from_postures: [standing]
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_OBJECT_DROP:
+    unit_id: ACT_OBJECT_DROP
+    unit_type: atomic_action
+    timeout_sec: 5.0
+    interrupt_policy: safe_point
+  ACT_TRICK_PLAY_DEAD:
+    unit_id: ACT_TRICK_PLAY_DEAD
+    unit_type: atomic_action
+    timeout_sec: 6.0
+    interrupt_policy: safe_point
     to_posture: lying
-    conditions: { hiding_spot_available: true }
-    description: "Move away from a threat and conceal the body in a hiding spot — fear-driven avoidance."
-
-  # ── ACT_TREMBLE_AND_SHAKE ──────────────────────────────────────────────────
-  ACT_TREMBLE_AND_SHAKE:
-    unit_id: ACT_TREMBLE_AND_SHAKE
+  ACT_OBJECT_BRING:
+    unit_id: ACT_OBJECT_BRING
     unit_type: atomic_action
-    controller: motion
     timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: ""
-    conditions: {}
-    description: "Shiver and tremble involuntarily — intense fear or cold stress response."
-
-  # ── ACT_LOSE_CONTROL ───────────────────────────────────────────────────────
-  ACT_LOSE_CONTROL:
-    unit_id: ACT_LOSE_CONTROL
+    interrupt_policy: safe_point
+  ACT_OBJECT_FETCH:
+    unit_id: ACT_OBJECT_FETCH
     unit_type: atomic_action
-    controller: posture
-    timeout_sec: 3.0
-    interrupt_policy: unsafe
-    from_postures: [standing, sitting]
-    to_posture: lying
-    conditions: { extreme_fear: true }
-    description: "Collapse or lose postural control — extreme fear response, submissive urination may occur."
-
-  # ── ACT_APPROACH_OWNER_FEARFULLY ───────────────────────────────────────────
-  ACT_APPROACH_OWNER_FEARFULLY:
-    unit_id: ACT_APPROACH_OWNER_FEARFULLY
-    unit_type: task
-    controller: motion
-    timeout_sec: 10.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { owner_visible: true }
-    description: "Approach the owner with lowered body, tucked tail, and averted gaze — seeking protection."
-
-  # ── ACT_CALL_FOR_HELP ──────────────────────────────────────────────────────
-  ACT_CALL_FOR_HELP:
-    unit_id: ACT_CALL_FOR_HELP
-    unit_type: atomic_action
-    controller: audio
-    timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: ""
-    conditions: {}
-    description: "Emit loud, distressed barks or howls — vocalization intended to summon assistance."
-
-  # ╔════════════════════════════════════════════════════════════════════════════╗
-  # ║  SECTION V: Emotion — Curious actions                                    ║
-  # ╚════════════════════════════════════════════════════════════════════════════╝
-
-  # ── ACT_OBSERVE_QUIETLY ────────────────────────────────────────────────────
-  ACT_OBSERVE_QUIETLY:
-    unit_id: ACT_OBSERVE_QUIETLY
-    unit_type: atomic_action
-    controller: head
     timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting, lying]
-    to_posture: ""
-    conditions: { target_visible: true }
-    description: "Watch a target silently from a distance — quiet, non-intrusive observation."
-
-  # ── ACT_LOWER_BODY_AND_EXPLORE ─────────────────────────────────────────────
-  ACT_LOWER_BODY_AND_EXPLORE:
-    unit_id: ACT_LOWER_BODY_AND_EXPLORE
-    unit_type: composite_action
-    controller: motion
-    timeout_sec: 6.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: {}
-    description: "Crouch slightly and move forward cautiously — curious but careful approach posture."
-
-  # ── ACT_HOLD_TAIL_LEVEL_AND_WAG ────────────────────────────────────────────
-  ACT_HOLD_TAIL_LEVEL_AND_WAG:
-    unit_id: ACT_HOLD_TAIL_LEVEL_AND_WAG
-    unit_type: composite_action
-    controller: tail
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: {}
-    description: "Keep the tail horizontal and wag it slowly — neutral, interested curiosity signal."
-
-  # ── ACT_STAND_AND_OBSERVE ──────────────────────────────────────────────────
-  ACT_STAND_AND_OBSERVE:
-    unit_id: ACT_STAND_AND_OBSERVE
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: ""
-    conditions: { target_visible: true }
-    description: "Stand still and focus on a target — alert curiosity without commitment to approach."
-
-  # ── ACT_STAND_ALERT ────────────────────────────────────────────────────────
-  ACT_STAND_ALERT:
-    unit_id: ACT_STAND_ALERT
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [sitting, lying]
-    to_posture: standing
-    conditions: { stimulus_detected: true }
-    description: "Rise to a fully alert standing posture with ears forward — orienting to a novel stimulus."
-
-  # ── ACT_FOLLOW_MOVEMENT ────────────────────────────────────────────────────
-  ACT_FOLLOW_MOVEMENT:
-    unit_id: ACT_FOLLOW_MOVEMENT
-    unit_type: task
-    controller: head
-    timeout_sec: 8.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { moving_target_visible: true }
-    description: "Track a moving target visually, turning the head and possibly repositioning — sustained curiosity."
-
-  # ── ACT_CIRCLE_AND_INSPECT ─────────────────────────────────────────────────
-  ACT_CIRCLE_AND_INSPECT:
-    unit_id: ACT_CIRCLE_AND_INSPECT
-    unit_type: task
-    controller: motion
-    timeout_sec: 10.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { target_nearby: true }
-    description: "Circle around a target while sniffing and visually inspecting it from all angles."
-
-  # ╔════════════════════════════════════════════════════════════════════════════╗
-  # ║  SECTION W: High-level task actions                                      ║
-  # ╚════════════════════════════════════════════════════════════════════════════╝
-
-  # ── TASK_ORIENT_TO_ANIMAL ──────────────────────────────────────────────────
-  TASK_ORIENT_TO_ANIMAL:
-    unit_id: TASK_ORIENT_TO_ANIMAL
-    unit_type: task
-    controller: motion
-    timeout_sec: 6.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { other_animal_detected: true }
-    description: "Turn the body and head to face another detected animal — initial orientation for social interaction."
-
-  # ── TASK_OBSERVE_ANIMAL_RESPONSE ───────────────────────────────────────────
-  TASK_OBSERVE_ANIMAL_RESPONSE:
-    unit_id: TASK_OBSERVE_ANIMAL_RESPONSE
-    unit_type: task
-    controller: head
-    timeout_sec: 6.0
-    interrupt_policy: safe
-    from_postures: [standing, sitting]
-    to_posture: ""
-    conditions: { other_animal_detected: true }
-    description: "Watch another animal and interpret its body language — assessing friendliness before approaching."
-
-  # ── TASK_APPROACH_ANIMAL_SAFELY ────────────────────────────────────────────
-  TASK_APPROACH_ANIMAL_SAFELY:
-    unit_id: TASK_APPROACH_ANIMAL_SAFELY
-    unit_type: task
-    controller: motion
-    timeout_sec: 10.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { other_animal_detected: true, safe_to_approach: true }
-    description: "Approach another animal using de-escalation body language — curved path, lowered head, relaxed tail."
-
-  # ── TASK_APPROACH_PERSON ───────────────────────────────────────────────────
-  TASK_APPROACH_PERSON:
-    unit_id: TASK_APPROACH_PERSON
-    unit_type: task
-    controller: motion
-    timeout_sec: 10.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { person_detected: true }
-    description: "Walk toward a detected person at a moderate pace — purposeful social approach."
-
-  # ── TASK_APPROACH_OBJECT ───────────────────────────────────────────────────
-  TASK_APPROACH_OBJECT:
-    unit_id: TASK_APPROACH_OBJECT
-    unit_type: task
-    controller: motion
-    timeout_sec: 8.0
-    interrupt_policy: safe
-    from_postures: [standing]
-    to_posture: standing
-    conditions: { object_detected: true }
-    description: "Walk toward a detected object of interest — exploratory approach."
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Adapter-to-controller mapping (for reference)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-  # ║  SECTION Z: Legacy migrated actions (auto-generated)           ║
-  # ╚══════════════════════════════════════════════════════════════════╝
-
-  ACT_EAR_FLATTEN:
-    unit_id: ACT_EAR_FLATTEN
-    unit_type: atomic_action
-    controller: expression
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_EAR_FLATTEN (ear)"
-
-  ACT_EAR_FLATTEN_HAPPY:
-    unit_id: ACT_EAR_FLATTEN_HAPPY
-    unit_type: atomic_action
-    controller: expression
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_EAR_FLATTEN_HAPPY (ear)"
-
-  ACT_EAR_PERK_UP:
-    unit_id: ACT_EAR_PERK_UP
-    unit_type: atomic_action
-    controller: expression
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_EAR_PERK_UP (ear)"
-
-  ACT_EAR_RELAX:
-    unit_id: ACT_EAR_RELAX
-    unit_type: atomic_action
-    controller: expression
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_EAR_RELAX (ear)"
-
-  ACT_EAR_SWIVEL:
-    unit_id: ACT_EAR_SWIVEL
-    unit_type: atomic_action
-    controller: expression
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_EAR_SWIVEL (ear)"
-
-  ACT_HEAD_ALERT:
-    unit_id: ACT_HEAD_ALERT
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_ALERT (head)"
-
-  ACT_HEAD_GAZE_OWNER:
-    unit_id: ACT_HEAD_GAZE_OWNER
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_GAZE_OWNER (head)"
-
-  ACT_HEAD_LEAN_INTO_TOUCH:
-    unit_id: ACT_HEAD_LEAN_INTO_TOUCH
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_LEAN_INTO_TOUCH (head)"
-
-  ACT_HEAD_LICK_PAW:
-    unit_id: ACT_HEAD_LICK_PAW
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_LICK_PAW (head)"
-
-  ACT_HEAD_LOOK_AROUND:
-    unit_id: ACT_HEAD_LOOK_AROUND
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_LOOK_AROUND (head)"
-
-  ACT_HEAD_LOWER_TO_BOWL:
-    unit_id: ACT_HEAD_LOWER_TO_BOWL
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_LOWER_TO_BOWL (head)"
-
-  ACT_HEAD_NUDGE:
-    unit_id: ACT_HEAD_NUDGE
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_NUDGE (head)"
-
-  ACT_HEAD_SHAKE_TOY:
-    unit_id: ACT_HEAD_SHAKE_TOY
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_SHAKE_TOY (head)"
-
-  ACT_HEAD_SNIFF_FOOD:
-    unit_id: ACT_HEAD_SNIFF_FOOD
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_SNIFF_FOOD (head)"
-
-  ACT_HEAD_SNIFF_GROUND:
-    unit_id: ACT_HEAD_SNIFF_GROUND
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_SNIFF_GROUND (head)"
-
-  ACT_HEAD_SNIFF_OBJECT:
-    unit_id: ACT_HEAD_SNIFF_OBJECT
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_SNIFF_OBJECT (head)"
-
-  ACT_HEAD_TILT:
-    unit_id: ACT_HEAD_TILT
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_TILT (head)"
-
-  ACT_LOCO_APPROACH_SLOW:
-    unit_id: ACT_LOCO_APPROACH_SLOW
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_APPROACH_SLOW (loco)"
-
-  ACT_LOCO_BACK_AWAY:
-    unit_id: ACT_LOCO_BACK_AWAY
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_BACK_AWAY (loco)"
-
-  ACT_LOCO_FOLLOW:
-    unit_id: ACT_LOCO_FOLLOW
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 8.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_FOLLOW (loco)"
-
-  ACT_LOCO_HIDE:
-    unit_id: ACT_LOCO_HIDE
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 8.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_HIDE (loco)"
-
-  ACT_LOCO_HOP_IN_PLACE:
-    unit_id: ACT_LOCO_HOP_IN_PLACE
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_HOP_IN_PLACE (loco)"
-
-  ACT_LOCO_JUMP_ON_PERSON:
-    unit_id: ACT_LOCO_JUMP_ON_PERSON
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_JUMP_ON_PERSON (loco)"
-
-  ACT_LOCO_PACE:
-    unit_id: ACT_LOCO_PACE
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_PACE (loco)"
-
-  ACT_LOCO_POUNCE:
-    unit_id: ACT_LOCO_POUNCE
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_POUNCE (loco)"
-
-  ACT_LOCO_SCAN:
-    unit_id: ACT_LOCO_SCAN
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_SCAN (loco)"
-
-  ACT_LOCO_SHAKE_BODY:
-    unit_id: ACT_LOCO_SHAKE_BODY
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_SHAKE_BODY (loco)"
-
-  ACT_LOCO_SPIN:
-    unit_id: ACT_LOCO_SPIN
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_SPIN (loco)"
-
-  ACT_LOCO_STOP:
-    unit_id: ACT_LOCO_STOP
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_STOP (loco)"
-
-  ACT_LOCO_STOP_IMMEDIATE:
-    unit_id: ACT_LOCO_STOP_IMMEDIATE
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_STOP_IMMEDIATE (loco)"
-
-  ACT_LOCO_TROT_TOWARDS:
-    unit_id: ACT_LOCO_TROT_TOWARDS
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_TROT_TOWARDS (loco)"
-
-  ACT_LOCO_WALK_SLOW:
-    unit_id: ACT_LOCO_WALK_SLOW
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_WALK_SLOW (loco)"
-
-  ACT_LOCO_ZOOMIES:
-    unit_id: ACT_LOCO_ZOOMIES
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 8.0
-    interrupt_policy: unsafe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_ZOOMIES (loco)"
-
-  ACT_MOUTH_BITE_AND_SWALLOW:
-    unit_id: ACT_MOUTH_BITE_AND_SWALLOW
-    unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_MOUTH_BITE_AND_SWALLOW (mouth)"
-
-  ACT_MOUTH_CARRY_SHAKE:
-    unit_id: ACT_MOUTH_CARRY_SHAKE
-    unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 6.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_MOUTH_CARRY_SHAKE (mouth)"
-
-  ACT_MOUTH_CHEW:
-    unit_id: ACT_MOUTH_CHEW
-    unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 6.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_MOUTH_CHEW (mouth)"
-
-  ACT_MOUTH_GRAB:
-    unit_id: ACT_MOUTH_GRAB
-    unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_MOUTH_GRAB (mouth)"
-
-  ACT_MOUTH_LAP_WATER:
-    unit_id: ACT_MOUTH_LAP_WATER
-    unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_MOUTH_LAP_WATER (mouth)"
-
-  ACT_MOUTH_NIBBLE_FUR:
-    unit_id: ACT_MOUTH_NIBBLE_FUR
-    unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_MOUTH_NIBBLE_FUR (mouth)"
-
-  ACT_MOUTH_RELEASE:
-    unit_id: ACT_MOUTH_RELEASE
-    unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_MOUTH_RELEASE (mouth)"
-
-  ACT_NAV_TO_TARGET:
-    unit_id: ACT_NAV_TO_TARGET
-    unit_type: atomic_action
-    controller: nav
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_NAV_TO_TARGET (nav)"
-
-  ACT_PAW_AT_OBJECT:
-    unit_id: ACT_PAW_AT_OBJECT
-    unit_type: atomic_action
-    controller: paw
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_PAW_AT_OBJECT (paw)"
-
-  ACT_PAW_HOLD_HIGH:
-    unit_id: ACT_PAW_HOLD_HIGH
-    unit_type: atomic_action
-    controller: paw
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_PAW_HOLD_HIGH (paw)"
-
-  ACT_PAW_LIFT:
-    unit_id: ACT_PAW_LIFT
-    unit_type: atomic_action
-    controller: paw
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_PAW_LIFT (paw)"
-
-  ACT_PAW_REACH_UP:
-    unit_id: ACT_PAW_REACH_UP
-    unit_type: atomic_action
-    controller: paw
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_PAW_REACH_UP (paw)"
-
-  ACT_PAW_WIPE_FACE:
-    unit_id: ACT_PAW_WIPE_FACE
-    unit_type: atomic_action
-    controller: paw
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_PAW_WIPE_FACE (paw)"
-
-  ACT_PAW_WITHDRAW:
-    unit_id: ACT_PAW_WITHDRAW
-    unit_type: atomic_action
-    controller: paw
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_PAW_WITHDRAW (paw)"
-
-  ACT_POSTURE_ALERT_STAND:
-    unit_id: ACT_POSTURE_ALERT_STAND
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_ALERT_STAND (posture)"
-
-  ACT_POSTURE_CROUCH:
-    unit_id: ACT_POSTURE_CROUCH
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_CROUCH (posture)"
-
-  ACT_POSTURE_CROUCH_RUN:
-    unit_id: ACT_POSTURE_CROUCH_RUN
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_CROUCH_RUN (posture)"
-
-  ACT_POSTURE_CURL_UP:
-    unit_id: ACT_POSTURE_CURL_UP
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 20.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_CURL_UP (posture)"
-
-  ACT_POSTURE_FREEZE:
-    unit_id: ACT_POSTURE_FREEZE
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_FREEZE (posture)"
-
-  ACT_POSTURE_GENTLE_BREATHING:
-    unit_id: ACT_POSTURE_GENTLE_BREATHING
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 20.0
-    interrupt_policy: unsafe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_GENTLE_BREATHING (posture)"
-
-  ACT_POSTURE_LIE_FLAT:
-    unit_id: ACT_POSTURE_LIE_FLAT
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 20.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_LIE_FLAT (posture)"
-
-  ACT_POSTURE_LIE_SIDE:
-    unit_id: ACT_POSTURE_LIE_SIDE
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 20.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_LIE_SIDE (posture)"
-
-  ACT_POSTURE_PLAY_DEAD:
-    unit_id: ACT_POSTURE_PLAY_DEAD
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 20.0
-    interrupt_policy: unsafe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_PLAY_DEAD (posture)"
-
-  ACT_POSTURE_RELAXED_STAND:
-    unit_id: ACT_POSTURE_RELAXED_STAND
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_RELAXED_STAND (posture)"
-
-  ACT_POSTURE_ROLL_OVER:
-    unit_id: ACT_POSTURE_ROLL_OVER
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_ROLL_OVER (posture)"
-
-  ACT_POSTURE_SHAKE_BODY:
-    unit_id: ACT_POSTURE_SHAKE_BODY
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_SHAKE_BODY (posture)"
-
-  ACT_POSTURE_SIT:
-    unit_id: ACT_POSTURE_SIT
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_SIT (posture)"
-
-  ACT_POSTURE_SPLAY_LEGS:
-    unit_id: ACT_POSTURE_SPLAY_LEGS
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 20.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_SPLAY_LEGS (posture)"
-
-  ACT_POSTURE_STAND_UP:
-    unit_id: ACT_POSTURE_STAND_UP
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_STAND_UP (posture)"
-
-  ACT_POSTURE_STOP:
-    unit_id: ACT_POSTURE_STOP
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_STOP (posture)"
-
-  ACT_TAIL_TUCK:
-    unit_id: ACT_TAIL_TUCK
-    unit_type: atomic_action
-    controller: tail
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_TAIL_TUCK (tail)"
-
-  ACT_TAIL_WAG_FAST:
-    unit_id: ACT_TAIL_WAG_FAST
-    unit_type: atomic_action
-    controller: tail
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_TAIL_WAG_FAST (tail)"
-
-  ACT_TAIL_WAG_SLOW:
-    unit_id: ACT_TAIL_WAG_SLOW
-    unit_type: atomic_action
-    controller: tail
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_TAIL_WAG_SLOW (tail)"
-
-  ACT_VOCAL_BARK_HAPPY:
-    unit_id: ACT_VOCAL_BARK_HAPPY
-    unit_type: atomic_action
-    controller: audio
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_VOCAL_BARK_HAPPY (vocal)"
-
-  ACT_VOCAL_BARK_PLAYFUL:
-    unit_id: ACT_VOCAL_BARK_PLAYFUL
-    unit_type: atomic_action
-    controller: audio
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_VOCAL_BARK_PLAYFUL (vocal)"
-
-  ACT_VOCAL_GROWL_LOW:
-    unit_id: ACT_VOCAL_GROWL_LOW
-    unit_type: atomic_action
-    controller: audio
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_VOCAL_GROWL_LOW (vocal)"
-
-  ACT_VOCAL_WHINE_SOFT:
-    unit_id: ACT_VOCAL_WHINE_SOFT
-    unit_type: atomic_action
-    controller: audio
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_VOCAL_WHINE_SOFT (vocal)"
-
-  # ║  SECTION Z: Legacy migrated actions (auto-generated)           ║
-  # ╚══════════════════════════════════════════════════════════════════╝
-
-  ACT_EAR_FLATTEN:
-    unit_id: ACT_EAR_FLATTEN
-    unit_type: atomic_action
-    controller: expression
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_EAR_FLATTEN (ear)"
-
-  ACT_EAR_FLATTEN_HAPPY:
-    unit_id: ACT_EAR_FLATTEN_HAPPY
-    unit_type: atomic_action
-    controller: expression
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_EAR_FLATTEN_HAPPY (ear)"
-
-  ACT_EAR_PERK_UP:
-    unit_id: ACT_EAR_PERK_UP
-    unit_type: atomic_action
-    controller: expression
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_EAR_PERK_UP (ear)"
-
-  ACT_EAR_RELAX:
-    unit_id: ACT_EAR_RELAX
-    unit_type: atomic_action
-    controller: expression
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_EAR_RELAX (ear)"
-
-  ACT_EAR_SWIVEL:
-    unit_id: ACT_EAR_SWIVEL
-    unit_type: atomic_action
-    controller: expression
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_EAR_SWIVEL (ear)"
-
-  ACT_HEAD_ALERT:
-    unit_id: ACT_HEAD_ALERT
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_ALERT (head)"
-
-  ACT_HEAD_GAZE_OWNER:
-    unit_id: ACT_HEAD_GAZE_OWNER
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_GAZE_OWNER (head)"
-
-  ACT_HEAD_LEAN_INTO_TOUCH:
-    unit_id: ACT_HEAD_LEAN_INTO_TOUCH
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_LEAN_INTO_TOUCH (head)"
-
-  ACT_HEAD_LICK_PAW:
-    unit_id: ACT_HEAD_LICK_PAW
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_LICK_PAW (head)"
-
-  ACT_HEAD_LOOK_AROUND:
-    unit_id: ACT_HEAD_LOOK_AROUND
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_LOOK_AROUND (head)"
-
-  ACT_HEAD_LOWER_TO_BOWL:
-    unit_id: ACT_HEAD_LOWER_TO_BOWL
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_LOWER_TO_BOWL (head)"
-
-  ACT_HEAD_NUDGE:
-    unit_id: ACT_HEAD_NUDGE
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_NUDGE (head)"
-
-  ACT_HEAD_SHAKE_TOY:
-    unit_id: ACT_HEAD_SHAKE_TOY
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_SHAKE_TOY (head)"
-
-  ACT_HEAD_SNIFF_FOOD:
-    unit_id: ACT_HEAD_SNIFF_FOOD
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_SNIFF_FOOD (head)"
-
-  ACT_HEAD_SNIFF_GROUND:
-    unit_id: ACT_HEAD_SNIFF_GROUND
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_SNIFF_GROUND (head)"
-
-  ACT_HEAD_SNIFF_OBJECT:
-    unit_id: ACT_HEAD_SNIFF_OBJECT
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_SNIFF_OBJECT (head)"
-
-  ACT_HEAD_TILT:
-    unit_id: ACT_HEAD_TILT
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_HEAD_TILT (head)"
-
-  ACT_LOCO_APPROACH_SLOW:
-    unit_id: ACT_LOCO_APPROACH_SLOW
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_APPROACH_SLOW (loco)"
-
-  ACT_LOCO_BACK_AWAY:
-    unit_id: ACT_LOCO_BACK_AWAY
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_BACK_AWAY (loco)"
-
-  ACT_LOCO_FOLLOW:
-    unit_id: ACT_LOCO_FOLLOW
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 8.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_FOLLOW (loco)"
-
-  ACT_LOCO_HIDE:
-    unit_id: ACT_LOCO_HIDE
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 8.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_HIDE (loco)"
-
-  ACT_LOCO_HOP_IN_PLACE:
-    unit_id: ACT_LOCO_HOP_IN_PLACE
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_HOP_IN_PLACE (loco)"
-
-  ACT_LOCO_JUMP_ON_PERSON:
-    unit_id: ACT_LOCO_JUMP_ON_PERSON
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_JUMP_ON_PERSON (loco)"
-
-  ACT_LOCO_PACE:
-    unit_id: ACT_LOCO_PACE
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_PACE (loco)"
-
-  ACT_LOCO_POUNCE:
-    unit_id: ACT_LOCO_POUNCE
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_POUNCE (loco)"
-
-  ACT_LOCO_SCAN:
-    unit_id: ACT_LOCO_SCAN
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_SCAN (loco)"
-
-  ACT_LOCO_SHAKE_BODY:
-    unit_id: ACT_LOCO_SHAKE_BODY
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_SHAKE_BODY (loco)"
-
-  ACT_LOCO_SPIN:
-    unit_id: ACT_LOCO_SPIN
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_SPIN (loco)"
-
-  ACT_LOCO_STOP:
-    unit_id: ACT_LOCO_STOP
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_STOP (loco)"
-
-  ACT_LOCO_STOP_IMMEDIATE:
-    unit_id: ACT_LOCO_STOP_IMMEDIATE
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_STOP_IMMEDIATE (loco)"
-
-  ACT_LOCO_TROT_TOWARDS:
-    unit_id: ACT_LOCO_TROT_TOWARDS
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_TROT_TOWARDS (loco)"
-
-  ACT_LOCO_WALK_SLOW:
-    unit_id: ACT_LOCO_WALK_SLOW
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_WALK_SLOW (loco)"
-
-  ACT_LOCO_ZOOMIES:
-    unit_id: ACT_LOCO_ZOOMIES
-    unit_type: atomic_action
-    controller: motion
-    timeout_sec: 8.0
-    interrupt_policy: unsafe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_LOCO_ZOOMIES (loco)"
-
-  ACT_MOUTH_BITE_AND_SWALLOW:
-    unit_id: ACT_MOUTH_BITE_AND_SWALLOW
-    unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_MOUTH_BITE_AND_SWALLOW (mouth)"
-
-  ACT_MOUTH_CARRY_SHAKE:
-    unit_id: ACT_MOUTH_CARRY_SHAKE
-    unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 6.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_MOUTH_CARRY_SHAKE (mouth)"
-
-  ACT_MOUTH_CHEW:
-    unit_id: ACT_MOUTH_CHEW
-    unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 6.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_MOUTH_CHEW (mouth)"
-
-  ACT_MOUTH_GRAB:
-    unit_id: ACT_MOUTH_GRAB
-    unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_MOUTH_GRAB (mouth)"
-
-  ACT_MOUTH_LAP_WATER:
-    unit_id: ACT_MOUTH_LAP_WATER
-    unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_MOUTH_LAP_WATER (mouth)"
-
-  ACT_MOUTH_NIBBLE_FUR:
-    unit_id: ACT_MOUTH_NIBBLE_FUR
-    unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_MOUTH_NIBBLE_FUR (mouth)"
-
-  ACT_MOUTH_RELEASE:
-    unit_id: ACT_MOUTH_RELEASE
-    unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_MOUTH_RELEASE (mouth)"
-
-  ACT_NAV_TO_TARGET:
-    unit_id: ACT_NAV_TO_TARGET
-    unit_type: atomic_action
-    controller: nav
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_NAV_TO_TARGET (nav)"
-
-  ACT_PAW_AT_OBJECT:
-    unit_id: ACT_PAW_AT_OBJECT
-    unit_type: atomic_action
-    controller: paw
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_PAW_AT_OBJECT (paw)"
-
-  ACT_PAW_HOLD_HIGH:
-    unit_id: ACT_PAW_HOLD_HIGH
-    unit_type: atomic_action
-    controller: paw
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_PAW_HOLD_HIGH (paw)"
-
-  ACT_PAW_LIFT:
-    unit_id: ACT_PAW_LIFT
-    unit_type: atomic_action
-    controller: paw
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_PAW_LIFT (paw)"
-
-  ACT_PAW_REACH_UP:
-    unit_id: ACT_PAW_REACH_UP
-    unit_type: atomic_action
-    controller: paw
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_PAW_REACH_UP (paw)"
-
-  ACT_PAW_WIPE_FACE:
-    unit_id: ACT_PAW_WIPE_FACE
-    unit_type: atomic_action
-    controller: paw
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_PAW_WIPE_FACE (paw)"
-
-  ACT_PAW_WITHDRAW:
-    unit_id: ACT_PAW_WITHDRAW
-    unit_type: atomic_action
-    controller: paw
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_PAW_WITHDRAW (paw)"
-
-  ACT_POSTURE_ALERT_STAND:
-    unit_id: ACT_POSTURE_ALERT_STAND
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_ALERT_STAND (posture)"
-
-  ACT_POSTURE_CROUCH:
-    unit_id: ACT_POSTURE_CROUCH
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_CROUCH (posture)"
-
-  ACT_POSTURE_CROUCH_RUN:
-    unit_id: ACT_POSTURE_CROUCH_RUN
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_CROUCH_RUN (posture)"
-
-  ACT_POSTURE_CURL_UP:
-    unit_id: ACT_POSTURE_CURL_UP
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 20.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_CURL_UP (posture)"
-
-  ACT_POSTURE_FREEZE:
-    unit_id: ACT_POSTURE_FREEZE
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 5.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_FREEZE (posture)"
-
-  ACT_POSTURE_GENTLE_BREATHING:
-    unit_id: ACT_POSTURE_GENTLE_BREATHING
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 20.0
-    interrupt_policy: unsafe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_GENTLE_BREATHING (posture)"
-
-  ACT_POSTURE_LIE_FLAT:
-    unit_id: ACT_POSTURE_LIE_FLAT
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 20.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_LIE_FLAT (posture)"
-
-  ACT_POSTURE_LIE_SIDE:
-    unit_id: ACT_POSTURE_LIE_SIDE
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 20.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_LIE_SIDE (posture)"
-
-  ACT_POSTURE_PLAY_DEAD:
-    unit_id: ACT_POSTURE_PLAY_DEAD
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 20.0
-    interrupt_policy: unsafe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_PLAY_DEAD (posture)"
-
-  ACT_POSTURE_RELAXED_STAND:
-    unit_id: ACT_POSTURE_RELAXED_STAND
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_RELAXED_STAND (posture)"
-
-  ACT_POSTURE_ROLL_OVER:
-    unit_id: ACT_POSTURE_ROLL_OVER
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_ROLL_OVER (posture)"
-
-  ACT_POSTURE_SHAKE_BODY:
-    unit_id: ACT_POSTURE_SHAKE_BODY
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_SHAKE_BODY (posture)"
-
-  ACT_POSTURE_SIT:
-    unit_id: ACT_POSTURE_SIT
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 4.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_SIT (posture)"
-
-  ACT_POSTURE_SPLAY_LEGS:
-    unit_id: ACT_POSTURE_SPLAY_LEGS
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 20.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_SPLAY_LEGS (posture)"
-
-  ACT_POSTURE_STAND_UP:
-    unit_id: ACT_POSTURE_STAND_UP
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_STAND_UP (posture)"
-
-  ACT_POSTURE_STOP:
-    unit_id: ACT_POSTURE_STOP
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 2.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_POSTURE_STOP (posture)"
-
-  ACT_TAIL_TUCK:
-    unit_id: ACT_TAIL_TUCK
-    unit_type: atomic_action
-    controller: tail
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_TAIL_TUCK (tail)"
-
-  ACT_TAIL_WAG_FAST:
-    unit_id: ACT_TAIL_WAG_FAST
-    unit_type: atomic_action
-    controller: tail
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_TAIL_WAG_FAST (tail)"
-
-  ACT_TAIL_WAG_SLOW:
-    unit_id: ACT_TAIL_WAG_SLOW
-    unit_type: atomic_action
-    controller: tail
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_TAIL_WAG_SLOW (tail)"
-
-  ACT_VOCAL_BARK_HAPPY:
-    unit_id: ACT_VOCAL_BARK_HAPPY
-    unit_type: atomic_action
-    controller: audio
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_VOCAL_BARK_HAPPY (vocal)"
-
-  ACT_VOCAL_BARK_PLAYFUL:
-    unit_id: ACT_VOCAL_BARK_PLAYFUL
-    unit_type: atomic_action
-    controller: audio
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_VOCAL_BARK_PLAYFUL (vocal)"
-
-  ACT_VOCAL_GROWL_LOW:
-    unit_id: ACT_VOCAL_GROWL_LOW
-    unit_type: atomic_action
-    controller: audio
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_VOCAL_GROWL_LOW (vocal)"
-
-  ACT_VOCAL_WHINE_SOFT:
-    unit_id: ACT_VOCAL_WHINE_SOFT
-    unit_type: atomic_action
-    controller: audio
-    timeout_sec: 3.0
-    interrupt_policy: safe
-    from_postures: [unknown]
-    to_posture: ""
-    conditions: {}
-    description: "Legacy action: ACT_VOCAL_WHINE_SOFT (vocal)"
-
-
-controller_adapters:
-  motion:
-    adapter_class: MotionControllerAdapter
-    target_interface: /motion/execute_motion
-    description: "Full-body locomotion and movement control."
-
-  posture:
-    adapter_class: PostureControllerAdapter
-    target_interface: /posture/set_posture
-    description: "Posture and body-configuration control (sit, stand, lie, etc.)."
-
-  head:
-    adapter_class: HeadControllerAdapter
-    target_interface: /head/set_target
-    description: "Head orientation, tilt, and gaze control."
-
-  tail:
-    adapter_class: TailControllerAdapter
-    target_interface: /tail/set_wag
-    description: "Tail position and wag pattern control."
-
-  mouth:
-    adapter_class: MouthControllerAdapter
-    target_interface: /mouth/execute_action
-    description: "Mouth, tongue, and jaw action control."
-
-  paw:
-    adapter_class: PawControllerAdapter
-    target_interface: /paw/execute_action
-    description: "Individual leg and paw motion control."
-
-  vocal:
-    adapter_class: VocalControllerAdapter
-    target_interface: /vocal/play_sound
-    description: "Non-audio vocal mimics (visual-only vocal gestures)."
-
-  audio:
-    adapter_class: AudioControllerAdapter
-    target_interface: /audio/play
-    description: "Speaker-based audio playback for barks, whines, growls, etc."
-
-  ear:
-    adapter_class: EarControllerAdapter
-    target_interface: /ear/set_position
-    description: "Ear position and swivel control."
-
-  nav:
-    adapter_class: NavigationControllerAdapter
-    target_interface: /navigation/navigate_to
-    description: "Map-aware navigation to known locations."
-
-  expression:
-    adapter_class: ExpressionControllerAdapter
-    target_interface: /expression/play
-    description: "Facial expression and pupil control via LED/screen display."
-
-  gimbal:
-    adapter_class: GimbalControllerAdapter
-    target_interface: /gimbal/set_target
-    description: "Sensor-gimbal orientation for camera/head stabilization."
-
-  meta:
-    adapter_class: MetaControllerAdapter
-    target_interface: null
-    description: "Meta-policy and modifier controller — no physical actuation, only parameter overrides."
-
-  composite:
-    adapter_class: CompositeControllerAdapter
-    target_interface: null
-    description: "Orchestrates multiple sub-actions across different controllers."
-
-  # ╔══════════════════════════════════════════════════════════════════╗
+    interrupt_policy: safe_point
+  ACT_SYSTEM_EMERGENCY_STOP:
+    unit_id: ACT_SYSTEM_EMERGENCY_STOP
+    unit_type: atomic_action
+    timeout_sec: 0.0
+    interrupt_policy: immediate

@@ -1,0 +1,29 @@
+# Bark sound configuration for voice-command behaviors.
+# Played asynchronously via GStreamer (or ffmpeg fallback) when a
+# voice-command behavior starts executing.
+
+bark_sound:
+  enabled: true
+
+  # Path to the MP3 / WAV audio file.
+  file: "/home/cat/桌面/dog_voice1.mp3"
+
+  # Behaviors that trigger bark playback.
+  voice_command_behaviors:
+    - respond_owner_call
+    - sit_down
+    - lie_down
+    - stand_up
+    - wait_in_place
+    - come_to_owner
+    - follow_owner
+    - give_paw
+    - high_five
+    - roll_over
+    - spin_around
+    - return_to_owner
+    - drop_object
+    - play_dead
+    - bring_object
+    - fetch_object
+    - emergency_stop
