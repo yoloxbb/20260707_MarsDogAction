@@ -1,1 +1,0 @@
-/home/cat/xbb/20260707_MarsDogAction/build/marsdog_action_executor/rosidl_generator_py/marsdog_action_executor/_marsdog_action_executor_s.ep.rosidl_typesupport_c.c

@@ -1,1 +1,0 @@
-/home/cat/xbb/20260707_MarsDogAction/build/marsdog_action_executor/rosidl_generator_c/marsdog_action_executor/msg/rosidl_generator_c__visibility_control.h

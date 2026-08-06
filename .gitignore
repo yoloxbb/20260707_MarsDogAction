@@ -1,10 +1,35 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
+# ROS 2 / colcon generated files
 build/
+install/
+log/
+
+# Python generated files and test/tool caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
 dist/
 wheels/
-*.egg-info
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
 
-# Virtual environments
-.venv
+# Virtual environments and machine-local configuration
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# Editor and operating-system files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
