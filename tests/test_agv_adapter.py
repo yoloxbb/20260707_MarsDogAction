@@ -227,6 +227,55 @@ def test_emergency_stop_only_publishes_zero() -> None:
     assert commands == [TwistCommand(), TwistCommand(), TwistCommand()]
 
 
+def test_sleeping_stage_forces_stationary_then_wakeup_reenables_motion() -> None:
+    commands: list[TwistCommand] = []
+    fake_time = FakeTime()
+    adapter = _adapter(commands, fake_time)
+    loader = ConfigLoader(CONFIG_DIR)
+    loader.load_all()
+    executor = StageExecutor(
+        action_catalog=loader.action_catalog,
+        controller_routes=loader.get_controller_routes(),
+        controller_adapters={"agv": adapter},
+    )
+    ctx = ExecutionContext.from_goal("sleepNow", {})
+    ctx.resolved_behavior_name = "sleepNow"
+
+    sleeping = executor.execute_stage(
+        {
+            "stage_id": "sleeping",
+            "motion_state": "stationary",
+            "selection_policy": "first",
+            "required": True,
+            "candidates": [{"unit_id": "ACT_FLIP_BODY"}],
+        },
+        ctx,
+    )
+
+    assert sleeping.success
+    assert ctx.motion_state == "stationary"
+    assert math.isclose(fake_time.now, 5.0, abs_tol=1e-9)
+    assert commands
+    assert all(command.is_zero for command in commands)
+
+    commands.clear()
+    wakeup = executor.execute_stage(
+        {
+            "stage_id": "wakeup",
+            "selection_policy": "first",
+            "required": True,
+            "candidates": [{"unit_id": "ACT_GETUP_CRAWL"}],
+        },
+        ctx,
+    )
+
+    assert wakeup.success
+    assert ctx.motion_state == "active"
+    assert math.isclose(fake_time.now, 8.5, abs_tol=1e-9)
+    assert any(not command.is_zero for command in commands)
+    assert commands[-1].is_zero
+
+
 def test_collision_reduced_emotion_motion_profiles_match_contract() -> None:
     config = _agv_config()
     groups = config["motion_groups"]

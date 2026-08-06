@@ -64,6 +64,8 @@ class ExecutionContext:
         wake_confidence: Upstream wake detector confidence/score.
         wake_frame_id: Coordinate frame for wake_angle_deg (base_link).
         current_stage: Updated during execution.
+        motion_state: Chassis policy for the current stage. ``active`` allows
+            configured motion; ``stationary`` forces zero velocity.
         current_unit: Updated during execution.
         current_posture: Tracked by PostureManager.
         speed_scale: Modifier.
@@ -113,6 +115,7 @@ class ExecutionContext:
 
     current_stage: str | None = None
     current_unit: str | None = None
+    motion_state: str = "active"
     current_posture: str = "unknown"
 
     speed_scale: float = 1.0

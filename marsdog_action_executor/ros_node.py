@@ -64,7 +64,7 @@ from .models import BehaviorGoal, ExecutionFeedback, ExecutionResult
 from .posture_manager import PostureManager
 from .result_evaluator import ResultEvaluator
 from .ros2_compat import HAS_ROS2, get_execute_behavior_action, get_action_source
-from .sound_player import SoundPlayer
+from .sound_player import BehaviorSoundController
 from .stage_executor import StageExecutor, StageResult
 
 logger = logging.getLogger(__name__)
@@ -422,7 +422,10 @@ if HAS_ROS2:
             self._current_priority: int = 99  # lower = more urgent
 
             # ── Background session attention tracking ────────────────
-            self._bark_player: SoundPlayer | None = None
+            self._behavior_sounds = BehaviorSoundController(
+                self._config.sound_config,
+                self._config.config_dir,
+            )
 
             self.declare_parameter("attention_tracking_enabled", True)
             self.declare_parameter("attention_tracking_gain", 0.8)
@@ -593,6 +596,7 @@ if HAS_ROS2:
                             self._mobility_adapter.cancel_step()
                         if self._agv_adapter is not None:
                             self._agv_adapter.cancel_step()
+                        self._behavior_sounds.stop()
                         # fall through to ACCEPT — _on_execute will wait
                         # for the old goal's lock to be released
                     else:
@@ -604,6 +608,7 @@ if HAS_ROS2:
                         return GoalResponse.REJECT
                 if name == "emergency_stop":
                     self._interrupt.request_cancel()
+                    self._behavior_sounds.stop()
                     if self._wake_orientation_adapter is not None:
                         self._wake_orientation_adapter.emergency_stop()
                     if self._mobility_adapter is not None:
@@ -707,6 +712,7 @@ if HAS_ROS2:
                 f"Cancel requested: {goal_handle.request.goal_id}"
             )
             self._interrupt.request_cancel()
+            self._behavior_sounds.stop()
             if self._wake_orientation_adapter is not None:
                 self._wake_orientation_adapter.cancel_step()
             if self._mobility_adapter is not None:
@@ -768,6 +774,7 @@ if HAS_ROS2:
                 )
                 return await self._execute_behavior(goal_handle)
             finally:
+                self._behavior_sounds.stop()
                 self._behavior_execution_lock.release()
 
         async def _execute_behavior(self, goal_handle):
@@ -944,22 +951,13 @@ if HAS_ROS2:
             # ── Step 5: Execute existing behavior-tree stages ───────────
             start_time = time.time()  # stage timeout starts after navigation
 
-            # ── Trigger bark sound for voice-command behaviors ────────
-            bark_started = False
-            bark_cfg = self._config.sound_config
-            if bark_cfg and bark_cfg.get("enabled", False):
-                behaviors = set(bark_cfg.get("voice_command_behaviors", []))
-                if canonical in behaviors:
-                    bark_file = bark_cfg.get("file", "")
-                    if bark_file:
-                        if self._bark_player is None:
-                            self._bark_player = SoundPlayer(bark_file)
-                        self._bark_player.play()
-                        bark_started = True
-                        self.get_logger().info(
-                            f"[{gid}] Bark sound started for voice "
-                            f"command: {canonical}"
-                        )
+            # Audio begins after navigation, together with behavior Stages.
+            sound_path = self._behavior_sounds.play_for(canonical)
+            if sound_path is not None:
+                self.get_logger().info(
+                    f"[{gid}] Behavior sound started: {canonical} -> "
+                    f"{sound_path.name}"
+                )
 
             for i, stage_cfg in enumerate(stages):
                 stage_id = (
@@ -1015,10 +1013,6 @@ if HAS_ROS2:
                     if required and failure_policy == "abort":
                         break
                     # skip_stage → continue to next stage
-
-            # ── Stop bark sound (best-effort, no-op if not playing) ────
-            if bark_started and self._bark_player is not None:
-                self._bark_player.stop()
 
             # ── Step 6: Evaluate result ────────────────────────────────
             behavior_result = self._result_evaluator.evaluate(
@@ -1081,6 +1075,7 @@ if HAS_ROS2:
 
         def _execute_emergency_stop(self, goal_handle):
             """Publish zero velocity immediately without waiting for another goal."""
+            self._behavior_sounds.stop()
             goal_req = goal_handle.request
             gid = goal_req.goal_id
             behavior_id = getattr(goal_req, "behavior_id", gid)
@@ -1233,6 +1228,7 @@ def main(args: list[str] | None = None) -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        node._behavior_sounds.stop()
         if node._mobility_adapter is not None and rclpy.ok():
             node._mobility_adapter.emergency_stop()
         if node._wake_orientation_adapter is not None and rclpy.ok():

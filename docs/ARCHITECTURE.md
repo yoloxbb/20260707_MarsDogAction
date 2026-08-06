@@ -184,9 +184,27 @@ A–E 点位并调用 Nav2；成功到点后，StageExecutor 仍从原行为树�
 `ACT_*`，`BehaviorMobilityAdapter` 再按该动作 ID 选择 Twist 代理。导航与
 Stage Twist 严格串行，取消和急停同时作用于 Nav2 Goal 与 `/cmd_vel`。
 
+Stage 可通过 `motion_state` 声明底盘约束。默认值 `active` 允许按动作映射执行；
+`stationary` 是强制不变量：Stage 一进入就发布零 Twist，且该 Stage 的任何动作
+都只能保持零速度。`sleepOnSide` 和 `sleepNow` 的 `sleeping` Stage 使用此约束，
+下一 Stage 会恢复默认 `active`，使睡觉状态与底盘运动状态保持一致。
+
 `respond_owner_call` 的 `ACT_INTERACT_RESPOND_CALL` 使用独立
 `wake_orientation` 路由：从 `ExecutionContext.wake_angle_deg` 读取动态声源
 角度，经零点/方向校准后调用 Nav2 `/spin`。它不进入固定 Twist 运动组。
+
+行为音频由 `sound_config.yaml` 的精确 `behavior_sounds` 映射选择。固定点或随机点
+导航成功后，音频与首个 Stage 同时开始，且同一时刻只保留一个播放进程；行为
+完成、取消、抢占、急停和节点退出都会停止当前音频。相对音频路径以安装后的
+`config/` 为基准，因此素材必须随包安装，不能依赖开发机桌面目录。
+
+`emotion_display` 保持订阅原有 Goal、Feedback、Result 调试事件，但主视觉改为
+Qt 实时绘制的卡通电子宠物脸。情绪分类控制眼睛开合、瞳孔、耳朵、嘴型、配饰颜色以及
+呼吸/抖动节奏；30 FPS 定时器驱动眨眼、独立耳朵摆动、视线游走、嘴型变化、轻微漂浮和
+背景气泡。喜悦/社交会显示上浮爱心，焦虑/恐惧会显示动态汗滴。整体采用暖色实体狗狗造型，
+不使用科技网格、扫描线或雷达光环。该动画层不改变 ROS2 接口，原 PNG 情绪资源继续
+随包安装，供兼容或其他展示端使用。显示端按 `goal_id` 关联 Goal、Feedback 和 Result，
+忽略被抢占任务的迟到终态；若启动较晚漏收 Goal，则从首条 Feedback 恢复当前行为。
 
 ## 8. ROS2 可观测性
 

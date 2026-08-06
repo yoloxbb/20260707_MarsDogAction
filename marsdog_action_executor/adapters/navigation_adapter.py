@@ -327,12 +327,14 @@ class BehaviorMobilityAdapter:
         duration: float | None = None,
     ) -> bool:
         """Execute the Twist proxy configured for the current existing stage."""
-        del duration
         behavior_name = str(getattr(ctx, "resolved_behavior_name", ""))
         stage_id = str(getattr(ctx, "current_stage", ""))
         route = self._behavior_routes.get(behavior_name)
         if route is None or stage_id not in route["stages"]:
             return False
+        if getattr(ctx, "motion_state", "active") == "stationary":
+            return self.hold_position(duration)
+        del duration
         unit_id = str(unit_config.get("unit_id", ""))
         group_name = self._action_motion_groups.get(unit_id)
         if group_name is None:
@@ -344,6 +346,14 @@ class BehaviorMobilityAdapter:
             )
             return False
         return bool(self._motion_adapter.execute_group(group_name, ctx))
+
+    def hold_position(self, duration_sec: float | None = None) -> bool:
+        """Keep the chassis stationary while retaining the semantic stage."""
+        hold_position = getattr(self._motion_adapter, "hold_position", None)
+        if callable(hold_position):
+            return bool(hold_position(duration_sec))
+        self._motion_adapter.cancel_step()
+        return True
 
     def cancel_step(self, step: Any = None) -> None:
         del step

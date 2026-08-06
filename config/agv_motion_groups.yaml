@@ -635,9 +635,11 @@ action_motion_groups:
   ACT_SLEEP_CURLED_UP: strafe_left_turn_right
   ACT_SLEEP_ON_STOMACH: strafe_left_turn_right
   ACT_SLEEP_ON_SIDE_CURLED_UP: strafe_left_turn_right
-  ACT_FLIP_BODY: strafe_right_turn_left
-  ACT_WHINE_SOFTLY: strafe_right_turn_left
-  ACT_TWITCH_OR_KICK_LEGS: strafe_right_turn_left
+  # The sleeping stage is a hard stationary state. These exact actions remain
+  # visible in feedback, but their chassis proxy must only publish zero Twist.
+  ACT_FLIP_BODY: stop
+  ACT_WHINE_SOFTLY: stop
+  ACT_TWITCH_OR_KICK_LEGS: stop
   ACT_GETUP_CRAWL: backward_1s
   ACT_GETUP_ROLL: backward_1s
   ACT_GETUP_BOUNCE: backward_1s

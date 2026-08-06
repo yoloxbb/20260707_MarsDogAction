@@ -1,6 +1,6 @@
-# Bark sound configuration for voice-command behaviors.
-# Played asynchronously via GStreamer (or ffmpeg fallback) when a
-# voice-command behavior starts executing.
+# Behavior audio configuration. Playback starts after navigation, together
+# with the first behavior Stage. It stops on completion, cancellation,
+# preemption, emergency stop, or node shutdown.
 
 bark_sound:
   enabled: true
@@ -27,3 +27,16 @@ bark_sound:
     - bring_object
     - fetch_object
     - emergency_stop
+
+  # Exact behavior -> packaged audio file. Relative paths resolve from config/.
+  behavior_sounds:
+    expressCuriosityWithHuman: sounds/好奇.mp3
+    expressCuriosityAlone: sounds/好奇.mp3
+    expressFearWithHuman: sounds/恐惧.wav
+    expressFearAlone: sounds/恐惧.wav
+    expressAnxietyWithHuman: sounds/焦虑.wav
+    expressAnxietyAlone: sounds/焦虑.wav
+    expressExcitementWithHuman: sounds/兴奋愉悦.wav
+    expressExcitementAlone: sounds/兴奋愉悦.wav
+    expressJoyWithHuman: sounds/兴奋愉悦.wav
+    expressJoyAlone: sounds/兴奋愉悦.wav

@@ -86,7 +86,15 @@ class StageExecutor:
         loop_policy = stage_config.get("loop_policy")
 
         ctx.current_stage = stage_id
-        logger.info("Stage %s starting (policy=%s, required=%s)", stage_id, policy, required)
+        ctx.motion_state = str(stage_config.get("motion_state", "active"))
+        self._apply_stage_motion_state(ctx)
+        logger.info(
+            "Stage %s starting (policy=%s, required=%s, motion_state=%s)",
+            stage_id,
+            policy,
+            required,
+            ctx.motion_state,
+        )
 
         rng = random.Random(seed)
 
@@ -128,6 +136,20 @@ class StageExecutor:
         return StageResult(stage_id, True, chosen.get("unit_id", "") if not isinstance(chosen, list) else "sequence", "stage completed")
 
     # ── internal helpers ──────────────────────────────────────────────
+
+    def _apply_stage_motion_state(self, ctx: ExecutionContext) -> None:
+        """Apply a stage's chassis invariant as soon as the stage starts."""
+        if ctx.motion_state != "stationary":
+            return
+
+        # Runtime installs both adapters, but behavior_mobility wraps the same
+        # AGV adapter. Prefer the direct adapter to avoid duplicate stop bursts.
+        adapter = self._controller_adapters.get("agv")
+        if adapter is None:
+            adapter = self._controller_adapters.get("behavior_mobility")
+        hold_position = getattr(adapter, "hold_position", None)
+        if callable(hold_position):
+            hold_position()
 
     def _get_candidates(self, stage_config: dict[str, Any]) -> list[dict[str, Any]]:
         """Extract candidate list from stage config."""

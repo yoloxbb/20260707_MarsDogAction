@@ -34,6 +34,11 @@ VALID_INTERRUPT_POLICIES = {
     "immediate", "safe_point", "non_interruptible",
 }
 
+VALID_MOTION_STATES = {
+    "active", "stationary",
+}
+
+
 class ConfigurationError(Exception):
     """Raised when configuration is invalid — should prevent node startup."""
 
@@ -183,6 +188,12 @@ class ConfigLoader:
                 policy = stage.get("selection_policy", "random_one")
                 if policy not in VALID_SELECTION_POLICIES:
                     self._errors.append(f"Behavior {name!r} stage {sid!r}: invalid selection_policy {policy!r}")
+                motion_state = stage.get("motion_state", "active")
+                if motion_state not in VALID_MOTION_STATES:
+                    self._errors.append(
+                        f"Behavior {name!r} stage {sid!r}: "
+                        f"invalid motion_state {motion_state!r}"
+                    )
                 if stage.get("required", True) and not stage.get("candidates"):
                     self._errors.append(f"Behavior {name!r} stage {sid!r}: required stage has no candidates")
                 for candidate in stage.get("candidates", []):
@@ -780,7 +791,7 @@ class ConfigLoader:
             )
 
     def _validate_sound_config(self) -> None:
-        """Validate bark sound configuration (optional)."""
+        """Validate voice-command and per-behavior sound configuration."""
         config = self.sound_config
         if not config:
             return  # optional, not required
@@ -821,6 +832,24 @@ class ConfigLoader:
                     self._errors.append(
                         "sound_config.yaml: unknown behavior in "
                         f"bark_sound.voice_command_behaviors: {name!r}"
+                    )
+
+        behavior_sounds = config.get("behavior_sounds", {})
+        if not isinstance(behavior_sounds, dict):
+            self._errors.append(
+                "sound_config.yaml: bark_sound.behavior_sounds must be a mapping"
+            )
+        else:
+            for name, file_name in behavior_sounds.items():
+                if name not in self.behavior_tree_templates:
+                    self._errors.append(
+                        "sound_config.yaml: unknown behavior in "
+                        f"bark_sound.behavior_sounds: {name!r}"
+                    )
+                if not isinstance(file_name, str) or not file_name.strip():
+                    self._errors.append(
+                        "sound_config.yaml: behavior sound path for "
+                        f"{name!r} must be a non-empty string"
                     )
 
     def _validate_wake_orientation_config(self) -> None:
@@ -899,6 +928,10 @@ class ConfigLoader:
         )
 
     # ── Accessors ─────────────────────────────────────────────────────────
+
+    @property
+    def config_dir(self) -> Path:
+        return self._dir
 
     def get_behavior_template(self, name: str) -> dict[str, Any] | None:
         """Return a behavior-tree template by exact direct name."""

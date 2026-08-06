@@ -140,6 +140,9 @@ class AgvMotionAdapter:
         duration: float | None = None,
     ) -> bool:
         """Publish a configured motion group at the configured rate."""
+        if getattr(ctx, "motion_state", "active") == "stationary":
+            return self.hold_position(duration)
+
         del duration  # Group segment durations are authoritative.
 
         unit_id = str(unit_config.get("unit_id", ""))
@@ -168,6 +171,10 @@ class AgvMotionAdapter:
         - **Dict with ``type: pick_random``**: randomly selects one candidate
           direction and a random duration in *[min, max]* on every invocation.
         """
+        if getattr(ctx, "motion_state", "active") == "stationary":
+            self.hold_position()
+            return True
+
         if group_name not in self._motion_groups:
             logger.error("Unknown AGV motion group: %s", group_name)
             self._publish_stop()
@@ -242,6 +249,30 @@ class AgvMotionAdapter:
         del step
         self._stop_requested.set()
         self._publish_stop()
+
+    def hold_position(self, duration_sec: float | None = None) -> bool:
+        """Force zero velocity, optionally reaffirming it for a stage duration."""
+        self._stop_requested.set()
+        self._publish_stop()
+        try:
+            duration = float(duration_sec or 0.0)
+        except (TypeError, ValueError):
+            duration = 0.0
+        if not math.isfinite(duration) or duration <= 0.0:
+            return True
+
+        deadline = self._monotonic() + duration
+        stop = TwistCommand()
+        try:
+            while self._monotonic() < deadline:
+                if self._should_stop():
+                    return False
+                self._publish_twist(stop)
+                remaining = deadline - self._monotonic()
+                self._sleep(min(self._period_sec, max(0.0, remaining)))
+            return True
+        finally:
+            self._publish_stop()
 
     def emergency_stop(self) -> None:
         """Immediately request stop and publish redundant zero commands."""

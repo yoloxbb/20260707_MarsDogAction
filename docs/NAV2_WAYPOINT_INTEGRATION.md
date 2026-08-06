@@ -70,7 +70,7 @@ Stage 仍然从原候选列表选择精确 `ACT_*`，随后按该动作 ID 查�
 | `ACT_CIRCLE_AROUND` | `spin_360` |
 | `ACT_YAWN` | `sit_gesture` |
 | `ACT_SLEEP_ON_SIDE` | `stop` |
-| `ACT_FLIP_BODY` | `roll_over_proxy` |
+| `ACT_FLIP_BODY` | `stop`（`sleeping` 阶段保持静止） |
 | `ACT_LICK_FOOD` | `wiggle` |
 | `ACT_CHEW_OR_CARRY_FOOD` | `nudge` |
 | `ACT_WALK_AWAY_OR_LIE_DOWN` | `retreat` |
@@ -81,6 +81,11 @@ Stage 仍然从原候选列表选择精确 `ACT_*`，随后按该动作 ID 查�
 `action_motion_groups`。Feedback 和 Result 中的动作 ID 不会被运动组名替换。
 配置校验要求每个已路由 Stage 的所有候选 `ACT_*` 都有映射，防止随机选中未
 适配动作后静默退回 mock。
+
+睡眠行为的 `sleeping` Stage 显式声明 `motion_state: stationary`。执行器在进入
+该状态时立即发送冗余零 Twist，并在该 Stage 内屏蔽所有非零运动组；三个睡眠中
+动作仍作为精确 `ACT_*` 出现在 Feedback/Result 中。进入后续 `wakeup` Stage 时，
+运动状态自动恢复为 `active`，允许执行起身代理动作。
 
 ## 4. 启动条件
 

@@ -163,6 +163,32 @@ def test_every_tree_action_is_registered_and_every_stage_selects_one() -> None:
     assert len(agv_actions) >= 51  # at minimum all previously mapped actions
     assert len(agv_groups) == len(loader.agv_motion_config["motion_groups"])
 
+    stationary_sleep_actions = {
+        "ACT_FLIP_BODY",
+        "ACT_WHINE_SOFTLY",
+        "ACT_TWITCH_OR_KICK_LEGS",
+    }
+    for behavior_name in ("sleepOnSide", "sleepNow"):
+        sleeping_stage = next(
+            stage
+            for stage in loader.behavior_tree_templates[behavior_name]["stages"]
+            if stage["stage_id"] == "sleeping"
+        )
+        assert sleeping_stage["motion_state"] == "stationary"
+        assert {
+            candidate["unit_id"]
+            for candidate in sleeping_stage["candidates"]
+        } == stationary_sleep_actions
+
+    assert {
+        action: loader.agv_motion_config["action_motion_groups"][action]
+        for action in stationary_sleep_actions
+    } == {action: "stop" for action in stationary_sleep_actions}
+    assert {
+        action: loader.navigation_config["action_motion_groups"][action]
+        for action in stationary_sleep_actions
+    } == {action: "stop" for action in stationary_sleep_actions}
+
     limits = loader.agv_motion_config["limits"]
     for group_config in agv_groups.values():
         if isinstance(group_config, dict):

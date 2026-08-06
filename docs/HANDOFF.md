@@ -92,6 +92,8 @@ Result 的 `metadata_json` 用于动态业务结果。成功充电必须返回�
 | `config/controller_routes.yaml` | 动作到控制器路由 |
 | `config/agv_motion_groups.yaml` | Twist 序列、速度限制、持续时间 |
 | `config/navigation_waypoints.yaml` | Nav2 语义点位和行为路由 |
+| `config/sound_config.yaml` | 语音指令犬叫与精确行为音频映射 |
+| `config/sounds/` | 随包安装的 MP3/WAV 行为音频素材 |
 | `config/wake_orientation.yaml` | 唤醒角度到 `/spin` 的转换 |
 | `config/safety_policies.yaml` | 安全约束 |
 
@@ -123,7 +125,12 @@ ros2 run marsdog_action_executor emotion_display
 /debug/execute_behavior/result
 ```
 
-若某行为无图片，界面应按行为名/当前 ACT 使用回退图片或文本占位，不应空白或崩溃。业务状态以 Action Result 为准，Debug Topic 只用于观测。
+界面使用 Qt 实时绘制暖色卡通电子狗脸，不依赖单张 PNG 才能显示；不同情绪会改变眼睛、
+耳朵、视线、嘴型、颜色和动画节奏；喜悦/社交带上浮爱心，焦虑/恐惧带动态汗滴。
+Feedback 同步更新 Stage、ACT 和底部进度条。业务
+状态以 Action Result 为准，Debug Topic 只用于观测。界面会按 `goal_id` 忽略旧任务的
+迟到 Result，并可通过 Feedback 恢复启动前已经开始的行为。程序默认全屏启动，按
+`F11` 可在全屏和普通窗口之间切换，按 `Esc` 退出全屏。
 
 跟随调试还应同时运行视觉 Viewer，观察 `track_id`、`body_center.x`、`bbox.h` 和最终 `/cmd_vel`。
 

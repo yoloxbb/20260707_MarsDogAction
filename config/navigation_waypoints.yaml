@@ -46,9 +46,9 @@ action_motion_groups:
   ACT_SLEEP_ON_SIDE_CURLED_UP: strafe_left_turn_right
   ACT_SLEEP_ON_SIDE: strafe_left_turn_right
   ACT_SLEEP_ON_BACK: strafe_left_turn_right
-  ACT_FLIP_BODY: strafe_right_turn_left
-  ACT_WHINE_SOFTLY: strafe_right_turn_left
-  ACT_TWITCH_OR_KICK_LEGS: strafe_right_turn_left
+  ACT_FLIP_BODY: stop
+  ACT_WHINE_SOFTLY: stop
+  ACT_TWITCH_OR_KICK_LEGS: stop
   ACT_GETUP_CRAWL: backward_1s
   ACT_GETUP_ROLL: backward_1s
   ACT_GETUP_BOUNCE: backward_1s

@@ -164,6 +164,7 @@ behaviors:
           - {unit_id: ACT_SLEEP_ON_SIDE_CURLED_UP}
       - stage_id: sleeping
         order: 3
+        motion_state: stationary
         selection_policy: random_one
         required: true
         candidates:
@@ -206,6 +207,7 @@ behaviors:
           - {unit_id: ACT_SLEEP_ON_BACK}
       - stage_id: sleeping
         order: 3
+        motion_state: stationary
         selection_policy: random_one
         required: true
         candidates:

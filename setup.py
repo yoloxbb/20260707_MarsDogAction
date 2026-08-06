@@ -34,6 +34,11 @@ setup(
             ),
             glob("config/emotion_images/*"),
         ),
+        # Behavior audio assets
+        (
+            os.path.join("share", package_name, "config", "sounds"),
+            glob("config/sounds/*"),
+        ),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
