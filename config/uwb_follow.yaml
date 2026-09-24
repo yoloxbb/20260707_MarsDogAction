@@ -1,0 +1,42 @@
+# Goal-scoped UWB owner following.
+#
+# Two different mechanisms live here, selected by chassis_type:
+#
+#   go2        -> the external FTDI UWB-AOA -> local_follow -> /cmd_vel
+#                 pipeline below, spawned as processes by the executor.
+#   lite3      -> a client of the go2_uwb_behavior Action/Service interface
+#                 (ros_interface below).  That package owns /cmd_vel itself,
+#                 so the executor must NOT start anything -- doing so would
+#                 put a second publisher on /cmd_vel.
+enabled: true
+
+# External UWB-AOA follow pipeline (Go2 only).
+setup_script: /home/cat/robot_ws/go2_follow/install/setup.bash
+serial_device: /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_AG00S82A-if00-port0
+cmd_vel_topic: /cmd_vel
+aoa_package: uwb_aoa_pkg
+aoa_executable: libAoa_robot_example
+target_fob_id: "2271560484"
+follow_package: go2_uwb_local_follow
+follow_launch_file: local_follow.launch.py
+startup_grace_sec: 1.0
+shutdown_timeout_sec: 3.0
+target_topic: /uwb/target_point
+diagnostics_topic: /go2_uwb_local_follow/follow_diagnostics
+target_timeout_sec: 3.0
+stop_publish_count: 3
+
+# go2_uwb_behavior interface (lite3 only).  The operator starts that chain
+# separately (see docs/UWB_FOLLOW_ROS2_INTERFACE.md); this executor only
+# consumes it.  Never launch local_follow.launch.py, uwb_follow_only.launch.py
+# or local_velocity_planner.launch.py alongside it -- all three publish
+# /cmd_vel and would fight the chain.
+ros_interface:
+  follow_action: /go2/follow_uwb
+  # The only way to stop the chain, so a follow is refused outright when this
+  # service is unreachable: never hand over /cmd_vel without a brake.
+  set_behavior_service: /go2/set_behavior
+  server_timeout_sec: 5.0
+  # Action/service discovery plus the pre-flight mode switch.  The upstream
+  # deployment guide recommends relaxing 2.0 -> 4.0 for the first real run.
+  ready_timeout_sec: 4.0

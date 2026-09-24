@@ -3,7 +3,7 @@ from marsdog_action_executor.adapters.attention_tracking_controller import (
 )
 
 
-def test_packaged_follow_configuration_uses_safe_faster_defaults():
+def test_legacy_visual_follow_parameters_remain_launch_compatible():
     from pathlib import Path
 
     import yaml
@@ -13,9 +13,9 @@ def test_packaged_follow_configuration_uses_safe_faster_defaults():
         "action_executor_node"
     ]["ros__parameters"]
 
-    assert parameters["follow_linear_gain"] == 0.75
+    assert parameters["follow_linear_gain"] == 1.0
     assert parameters["follow_max_linear_x"] == 0.25
-    assert parameters["follow_max_linear_accel"] == 0.35
+    assert parameters["follow_max_linear_accel"] == 0.50
 
 
 def test_session_visual_centering_uses_angular_velocity_only():
@@ -39,7 +39,7 @@ def test_session_visual_centering_uses_angular_velocity_only():
     assert command.angular_z < 0.0
 
 
-def test_follow_mode_moves_forward_until_body_reaches_target_size():
+def test_follow_mode_yields_all_velocity_output_to_uwb_controller():
     controller = AttentionTrackingController(
         wake_fallback_sec=0.0,
         smoothing_alpha=1.0,
@@ -62,7 +62,7 @@ def test_follow_mode_moves_forward_until_body_reaches_target_size():
             "body_center": [0.5, 0.5],
         }
     }, now=1.1)
-    assert controller.command(now=1.2).linear_x > 0.0
+    assert controller.command(now=1.2) is None
 
     controller.update_visual({
         "active_target": {
@@ -74,10 +74,10 @@ def test_follow_mode_moves_forward_until_body_reaches_target_size():
             "body_center": [0.5, 0.5],
         }
     }, now=1.3)
-    assert controller.command(now=1.4).linear_x == 0.0
+    assert controller.command(now=1.4) is None
 
 
-def test_follow_mode_rotates_before_driving_when_target_is_at_edge():
+def test_follow_mode_does_not_compete_for_angular_velocity_at_image_edge():
     controller = AttentionTrackingController(
         wake_fallback_sec=0.0,
         smoothing_alpha=1.0,
@@ -94,9 +94,7 @@ def test_follow_mode_rotates_before_driving_when_target_is_at_edge():
             "body_center": [0.8, 0.5],
         }
     }, now=1.1)
-    command = controller.command(now=1.2)
-    assert command.linear_x == 0.0
-    assert command.angular_z < 0.0
+    assert controller.command(now=1.2) is None
 
 
 def test_centered_stale_and_disabled_targets_stop_safely():
@@ -131,6 +129,24 @@ def test_formal_behavior_suspends_attention_without_publishing_override():
         "wake_angle": 30.0,
     }, now=1.0)
     assert controller.command(now=1.1, suspended=True) is None
+
+
+def test_wake_fallback_uses_same_dual_mic_center_for_both_sides():
+    controller = AttentionTrackingController(
+        max_angular_accel=100.0,
+        wake_angle_zero_offset_deg=90.0,
+        wake_angle_direction_sign=-1.0,
+    )
+    controller.update_control(
+        {"enabled": True, "wake_angle": 50.0}, now=1.0
+    )
+    assert controller.command(now=1.1).angular_z > 0.0
+
+    controller.update_control({"enabled": False}, now=1.2)
+    controller.update_control(
+        {"enabled": True, "wake_angle": 120.0}, now=2.0
+    )
+    assert controller.command(now=2.1).angular_z < 0.0
 
 
 def test_center_jitter_does_not_restart_rotation_inside_hysteresis():
@@ -225,7 +241,7 @@ def test_duplicate_session_control_does_not_reset_visual_tracking():
     control = {
         "enabled": True,
         "interaction_id": "session-1",
-        "mode": "follow_owner",
+        "mode": "face_body_centering",
     }
     controller.update_control(control, now=1.0)
     controller.update_visual({
@@ -234,11 +250,10 @@ def test_duplicate_session_control_does_not_reset_visual_tracking():
             "confidence": 0.9,
             "tracking_state": "tracking",
             "last_seen_age_ms": 10.0,
-            "bbox": [0.25, 0.2, 0.3, 0.2],
-            "body_center": [0.5, 0.5],
+            "body_center": [0.8, 0.5],
         }
     }, now=1.1)
-    assert controller.command(now=1.2).linear_x > 0.0
+    assert controller.command(now=1.2).angular_z < 0.0
 
     controller.update_control(control, now=1.25)
-    assert controller.command(now=1.3).linear_x > 0.0
+    assert controller.command(now=1.3).angular_z < 0.0

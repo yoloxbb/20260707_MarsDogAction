@@ -1,0 +1,466 @@
+# Unitree Go2 high-level SportMode backend.
+#
+# Go2 uses official high-level primitives and labels non-equivalent semantic
+# body expressions as proxies. Unlisted actions fail closed.
+enabled: false
+request_topic: /api/sport/request
+publish_rate_hz: 10.0
+stop_publish_count: 3
+limits:
+  max_linear_x: 0.30
+  max_linear_y: 0.20
+  max_angular_z: 1.20
+  # Go2 SportMode Move silently drops linear velocity below this magnitude;
+  # any non-zero Twist/sequence linear_x is floored to it so the robot actually
+  # translates instead of idling on sub-threshold commands.
+  min_linear_x: 0.25
+
+# Owner approach commands use a locked Vision target, one SLAM localization,
+# and one Nav2 goal. Navigation owns obstacle avoidance and its real Result.
+controller_route_overrides:
+  ACT_INTERACT_APPROACH_OWNER: person_nav_approach
+  ACT_INTERACT_APPROACH_OWNER_CLOSER: person_nav_approach
+  ACT_INTERACT_RETURN_OWNER: person_nav_approach
+
+# A sequence item publishes one official SportMode request, then keeps the
+# action alive for duration_sec.  `move` is refreshed at publish_rate_hz and is
+# always followed by redundant StopMove requests.
+action_sequences:
+  ACT_BASIC_SIT:
+    - {command: sit, duration_sec: 2.0}
+  ACT_BASIC_LIE_DOWN:
+    - {command: stand_down, duration_sec: 2.5}
+  ACT_BASIC_STAND:
+    - {command: stand_up, duration_sec: 2.5}
+  ACT_BASIC_BACK_UP:
+    - {command: move, x: -0.20, y: 0.0, z: 0.0, duration_sec: 1.2}
+  ACT_CONTROL_HOLD_STANDING:
+    - {command: stop_move, duration_sec: 3.0}
+  ACT_CONTROL_HOLD_POSITION:
+    - {command: stop_move, duration_sec: 5.0}
+  ACT_BASIC_WAIT:
+    - {command: stop_move, duration_sec: 3.0}
+
+  # Go2's Hello canned motion raises a front leg; it is the high-level API
+  # available for the requested paw/high-five interaction.
+  ACT_INTERACT_GIVE_PAW:
+    - {command: hello, duration_sec: 3.0}
+  ACT_INTERACT_HIGH_FIVE:
+    - {command: hello, duration_sec: 3.0}
+  ACT_TRICK_SPIN:
+    - {command: move, x: 0.0, y: 0.0, z: 1.2, duration_sec: 5.236}
+  ACT_TRICK_PLAY_DEAD:
+    - {command: stand_down, duration_sec: 2.5}
+
+  # Owner-specific expressions run only after ACT_APPROACH_VISUAL_TARGET has
+  # locked and approached identity=owner.
+  ACT_OWNER_UNHAPPY:
+    - {command: stand_down, duration_sec: 2.5}
+  ACT_EXPRESS_MISS_YOU:
+    - {command: hello, duration_sec: 3.0}
+  ACT_OWNER_GOING_OUT:
+    - {command: hello, duration_sec: 2.0}
+
+  # PRAISE/SCOLD are mapped by Tree to existing emotion behaviors. These are
+  # their higher-fidelity representatives; action_groups below cover every
+  # remaining candidate so the original random selection remains available.
+  ACT_NUZZLE_HEAD:
+    - {command: hello, duration_sec: 3.0}
+  ACT_COMFY_STRETCH:
+    - {command: hello, duration_sec: 3.0}
+  ACT_PLAY_BOW:
+    - {command: hello, duration_sec: 3.0}
+  ACT_BONE_DANCE:
+    - {command: hello, duration_sec: 4.0}
+  ACT_WHINE:
+    - {command: stand_down, duration_sec: 2.5}
+  ACT_HIDE_SHRINK:
+    - {command: stand_down, duration_sec: 2.5}
+  ACT_HIDE_BEHIND:
+    - {command: stand_down, duration_sec: 2.5}
+  ACT_INTERACT_EXPLORE:
+    - {command: euler, x: 0.0, y: 0.15, z: 0.0, duration_sec: 0.8}
+    - {command: euler, x: 0.0, y: -0.15, z: 0.0, duration_sec: 0.8}
+    - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.4}
+  ACT_NON_INTERACT_EXPLORE:
+    - {command: euler, x: 0.0, y: 0.15, z: 0.0, duration_sec: 0.8}
+    - {command: euler, x: 0.0, y: -0.15, z: 0.0, duration_sec: 0.8}
+    - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.4}
+  ACT_FREEZE_SHAKE:
+    - {command: stand_down, duration_sec: 2.5}
+
+  ACT_PERCEPTION_RESPOND_PERSON_FALL:
+    - {command: stop_move, duration_sec: 0.2}
+  ACT_PERCEPTION_RESPOND_STOP_GESTURE:
+    - {command: stop_move, duration_sec: 0.2}
+  ACT_SYSTEM_EMERGENCY_STOP:
+    - {command: stop_move, duration_sec: 0.1}
+
+# Reusable mappings cover the remaining behavior-table actions. `exact` means the selected
+# SportMode primitive directly represents the requested body action.  `proxy`
+# means Go2 performs the documented safe body expression, but external
+# manipulation (mouth/gripper), facial motion, vocalization, and biological
+# acts are not claimed to have happened.
+action_groups:
+  alert_pose:
+    fidelity: proxy
+    description: Small pitch-up alert pose; sound remains behavior-audio owned.
+    sequence:
+      - {command: euler, x: 0.0, y: -0.12, z: 0.0, duration_sec: 0.7}
+      - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.3}
+    actions:
+      - ACT_BARK_AT_OBJECT
+      - ACT_BARK_OR_WHINE_BRIEFLY
+      - ACT_BARK_TENSE
+      # 抬头 is the mirror of ``investigate_pose`` (which holds a positive
+      # pitch); this group already carries a negative one.
+      - ACT_RAISE_HEAD
+      - ACT_WHIMPER
+      - ACT_WHINE_OR_VOCALIZE_SOFTLY
+      - ACT_WHINE_SOFTLY
+
+  calm_sway:
+    fidelity: proxy
+    description: Gentle body roll used for calm checking and owner attention.
+    sequence:
+      - {command: euler, x: 0.10, y: 0.0, z: 0.0, duration_sec: 0.5}
+      - {command: euler, x: -0.10, y: 0.0, z: 0.0, duration_sec: 0.8}
+      - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.3}
+    actions:
+      - ACT_CHECK_OWNER
+
+  circle:
+    fidelity: proxy
+    description: Low-speed in-place turn used for circle and chase semantics.
+    sequence:
+      - {command: move, x: 0.0, y: 0.0, z: 0.8, duration_sec: 4.0}
+    actions:
+      - ACT_CHASE_TAIL
+      - ACT_CIRCLE_AROUND
+      - ACT_RUN_IN_CIRCLES_OR_CHASE
+      - ACT_RUN_IN_CIRCLES_OR_ZOOMIES
+      - ACT_SPIN_FRONT
+      - ACT_ZOOMIE_CIRCLE
+
+  excited_play:
+    fidelity: proxy
+    description: SportMode Hello proxy for energetic play.
+    sequence:
+      - {command: hello, duration_sec: 3.0}
+    actions:
+      - ACT_NIP_PLAYFUL
+      - ACT_SHAKE_TOY
+      - ACT_ZOOMIES
+
+  exit_scan:
+    fidelity: proxy
+    description: Short right scan followed by a cautious backward step.
+    sequence:
+      - {command: move, x: 0.0, y: 0.0, z: -0.45, duration_sec: 0.8}
+      - {command: move, x: -0.10, y: 0.0, z: 0.0, duration_sec: 0.8}
+    actions:
+      - ACT_SNIFF_EXCREMENT
+      - ACT_WALK_AWAY_OR_SHAKE_HEAD
+
+  feeding_pose:
+    fidelity: proxy
+    description: Body pitch proxy for eating, chewing, and bowl interaction.
+    sequence:
+      - {command: euler, x: 0.0, y: 0.18, z: 0.0, duration_sec: 1.0}
+      - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.3}
+    actions:
+      - ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD
+
+  grooming:
+    fidelity: proxy
+    # Go2 Scrape (1029) rears up on hind legs ("拜年/作揖") and can tip over;
+    # the safe Hello gesture is used instead for paw/scratch/grooming.
+    description: SportMode Hello proxy for paw, scratch, and grooming actions.
+    sequence:
+      - {command: hello, duration_sec: 2.0}
+    actions:
+      - ACT_LICK_PAWS_OR_FUR
+      - ACT_RUB_BODY_AGAINST_OBJECT
+      - ACT_SCRATCH_BED_OR_GROUND
+      - ACT_SCRATCH_DELIVERY_BOX_WITH_PAW
+      - ACT_SCRATCH_DOOR
+      - ACT_SCRATCH_EAR_WITH_HIND_LEG
+      - ACT_SCRATCH_OBJECT_GENTLY
+      - ACT_SCRATCH_SOIL_OR_GROUND
+      - ACT_SCRATCH_TISSUE_WITH_PAW
+      - ACT_SHAKE_OFF_WATER
+      - ACT_STAND_AND_SCRATCH_HIGH
+
+  guard_scan:
+    fidelity: proxy
+    description: Slow left-right body scan used while guarding.
+    sequence:
+      - {command: move, x: 0.0, y: 0.0, z: 0.45, duration_sec: 1.0}
+      - {command: move, x: 0.0, y: 0.0, z: -0.45, duration_sec: 2.0}
+      - {command: move, x: 0.0, y: 0.0, z: 0.45, duration_sec: 1.0}
+    actions:
+      - ACT_GUARD_DOOR
+
+  inspect_search:
+    fidelity: proxy
+    description: Conservative pitch and yaw search for inspection interactions.
+    sequence:
+      - {command: euler, x: 0.0, y: 0.12, z: 0.0, duration_sec: 0.4}
+      - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.2}
+      - {command: move, x: 0.0, y: 0.0, z: 0.35, duration_sec: 0.5}
+      - {command: move, x: 0.0, y: 0.0, z: -0.35, duration_sec: 1.0}
+      - {command: move, x: 0.0, y: 0.0, z: 0.35, duration_sec: 0.5}
+    actions:
+      - ACT_BITE_AND_SHAKE_SLIPPERS_SOCKS_OR_TOY
+      - ACT_BITE_DELIVERY_BOX
+      - ACT_CARRY_AND_DROP_OBJECT_AGAIN
+      - ACT_CARRY_AND_HIDE_OBJECT
+      - ACT_CARRY_DELIVERY_BOX_TO_PERSON
+      - ACT_CARRY_SLIPPERS_SOCKS_OR_TOY_TO_OWNER
+      - ACT_CARRY_TISSUE_TO_PERSON
+      - ACT_CRAWL_THROUGH_LOW_GAP
+      - ACT_LEAN_AGAINST_DOOR
+      - ACT_NIBBLE_OBJECT
+      - ACT_RUMMAGE_THROUGH_TRASH_CAN
+      - ACT_SNIFF_AROUND_DOOR
+      - ACT_SNIFF_DELIVERY_BOX
+      - ACT_SNIFF_OBJECT
+      - ACT_SNIFF_SLIPPERS_SOCKS_OR_TOY
+      - ACT_SNIFF_TISSUE
+      - ACT_SNIFF_TRASH_CAN
+      - ACT_TOUCH_OR_CARRY_OBJECT_WITH_MOUTH
+      - ACT_TROT_STOP_AND_SNIFF
+      - ACT_WALK_SLOWLY_AND_SNIFF_GROUND
+
+  investigate_pose:
+    fidelity: proxy
+    description: Forward body pitch used after navigation for close inspection.
+    sequence:
+      - {command: euler, x: 0.0, y: 0.18, z: 0.0, duration_sec: 0.8}
+      - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.3}
+    actions:
+      - ACT_LICK_FUR_OR_PAWS
+      - ACT_SNIFF_AND_CIRCLE_AT_TOILET_SPOT
+
+  object_carry_proxy:
+    fidelity: proxy
+    description: Cautious forward body motion; no grasp or carried-object claim.
+    sequence:
+      - {command: move, x: 0.10, y: 0.0, z: 0.0, duration_sec: 1.0}
+    actions:
+      - ACT_OBJECT_BRING
+
+  object_drop_proxy:
+    fidelity: proxy
+    description: Downward body pitch; Go2 high-level API cannot open a mouth.
+    sequence:
+      - {command: euler, x: 0.0, y: 0.18, z: 0.0, duration_sec: 0.8}
+      - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.2}
+    actions:
+      - ACT_OBJECT_DROP
+
+  object_fetch_proxy:
+    fidelity: proxy
+    # Go2 FrontPounce (1032) lunges forward ("向前扑") and is unsafe; use the
+    # safe Hello gesture instead.
+    description: Hello interaction attempt; no grasp or fetch claim.
+    sequence:
+      - {command: hello, duration_sec: 2.0}
+    actions:
+      - ACT_OBJECT_FETCH
+
+  patrol_scan:
+    fidelity: proxy
+    description: Slow alternating yaw scan for patrol-like expression.
+    sequence:
+      - {command: move, x: 0.0, y: 0.0, z: 0.45, duration_sec: 1.0}
+      - {command: move, x: 0.0, y: 0.0, z: -0.45, duration_sec: 2.0}
+      - {command: move, x: 0.0, y: 0.0, z: 0.45, duration_sec: 1.0}
+    actions:
+      - ACT_PATROL
+      - ACT_PATROL_ALONG_WALL
+
+  paw_hello:
+    fidelity: proxy
+    description: SportMode Hello front-leg gesture for paw interactions.
+    sequence:
+      - {command: hello, duration_sec: 2.0}
+    actions:
+      - ACT_PAW_AT_BOWL_OR_TREAT_CABINET
+      - ACT_PAW_AT_OWNER
+      - ACT_PAW_AT_SLIPPERS_SOCKS_OR_TOY
+      - ACT_PAW_GENTLY_AT_OTHER
+      - ACT_PAW_LEG
+      - ACT_PLACE_FRONT_PAWS_ON_OWNER_FOR_ATTENTION
+
+  paw_scrape:
+    fidelity: proxy
+    description: SportMode Hello gesture for paw contact attempts.
+    sequence:
+      - {command: hello, duration_sec: 2.0}
+    actions:
+      - ACT_BAT_TOY
+      - ACT_KNOCK_OVER_OBJECT
+      - ACT_PAW_AT_MUZZLE
+      - ACT_PUSH_OBJECT_WITH_PAW
+
+  pounce:
+    fidelity: proxy
+    # Go2 FrontPounce (1032) lunges forward ("向前扑") and is unsafe; use the
+    # safe Hello gesture instead for jump/pounce proxies.
+    description: SportMode Hello for jump and pounce actions.
+    sequence:
+      - {command: hello, duration_sec: 2.0}
+    actions:
+      - ACT_JUMP_PAW
+      - ACT_POUNCE_ON_SLIPPERS_SOCKS_OR_TOY
+      - ACT_POUNCE_OR_SIDE_HOP_GENTLY
+
+  recovery:
+    fidelity: proxy
+    description: SportMode RecoveryStand for all wake-up variants.
+    sequence:
+      - {command: recovery_stand, duration_sec: 2.5}
+    actions:
+      - ACT_GETUP_BOUNCE
+      - ACT_GETUP_CRAWL
+      - ACT_GETUP_ROLL
+      - ACT_GETUP_SIT
+      - ACT_GETUP_STRETCH
+
+  rest_pose:
+    fidelity: proxy
+    description: SportMode StandDown for sleep, sploot, roll, and low poses.
+    sequence:
+      - {command: stand_down, duration_sec: 2.5}
+    actions:
+      - ACT_BARK_AND_LIE_DOWN_IF_NO_CHARGER
+      - ACT_FIND_PLACE_TO_LIE_DOWN
+      - ACT_LIE_BESIDE_OTHER_ANIMAL
+      - ACT_LIE_BY_DOOR
+      - ACT_ROLL_OVER_FOR_BELLY_RUB
+      - ACT_SHOW_BELLY
+      - ACT_SLEEP_BY_FEET
+      - ACT_SLEEP_CURLED_UP
+      - ACT_SLEEP_ON_BACK
+      - ACT_SLEEP_ON_SIDE
+      - ACT_SLEEP_ON_SIDE_CURLED_UP
+      - ACT_SLEEP_ON_STOMACH
+      - ACT_SPLOOT
+      - ACT_SPLoot_LIE_DOWN
+      - ACT_SQUAT_AND_ELIMINATE
+      - ACT_TRICK_ROLL_OVER
+
+  social_affection:
+    fidelity: proxy
+    description: SportMode Hello for friendly contact and attention semantics.
+    sequence:
+      - {command: hello, duration_sec: 2.0}
+    actions:
+      - ACT_ASK_CUDDLE
+      - ACT_FETCH_LEASH
+      - ACT_FETCH_TOY
+      - ACT_LICK
+      - ACT_NUZZLE_BODY
+      - ACT_PURR
+      - ACT_TROT_BOUNCE
+      - ACT_WAG_TAIL
+      - ACT_WINK
+
+  social_left:
+    fidelity: proxy
+    description: Small left body lean without blind translation near a target.
+    sequence:
+      - {command: euler, x: 0.12, y: 0.0, z: 0.0, duration_sec: 0.8}
+      - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.2}
+    actions:
+      - ACT_APPROACH_SLOWLY_SIDEWAYS
+      - ACT_BUMP_OTHER_GENTLY_WITH_RELAXED_BODY
+      - ACT_LOWER_HEAD_FLOP_EARS_WAG_TAIL
+      - ACT_RUN_AWAY_AND_LOOK_BACK
+      - ACT_SNIFF_BUTT_OR_TAIL
+      - ACT_SNIFF_FACE_OR_EARS
+      - ACT_SNIFF_TOWARD_OTHER_ANIMAL
+      - ACT_STOP_OBSERVE_AND_TILT_HEAD
+      - ACT_TOUCH_NOSE_OR_HEAD_GENTLY
+
+  social_right:
+    fidelity: proxy
+    description: Small right body lean without blind translation near a target.
+    sequence:
+      - {command: euler, x: -0.12, y: 0.0, z: 0.0, duration_sec: 0.8}
+      - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.2}
+    actions:
+      - ACT_CARRY_LEASH_TO_OWNER
+      - ACT_CARRY_TOY_AND_WAG_TAIL_IN_FRONT_OF_OWNER
+      - ACT_CIRCLE_EMPTY_BOWL_OR_WATER_DISH
+      - ACT_FOLLOW_AND_STAY_CLOSE_TO_OWNER
+      - ACT_GENTLY_MOUTH_PANTS_OR_HAND
+      - ACT_NUDGE_OR_RUB_AGAINST_OWNER_HAND
+      - ACT_NUDGE_OWNER_AND_LOOK_AT_FOOD_OR_DOOR
+      - ACT_RUB_AGAINST_LEG_OR_LEAN_ON_OWNER
+      - ACT_SIDE_HOP_WITH_PLAY_POSTURE
+      - ACT_SIT_BY_DOOR_AND_LOOK_BACK_AT_OWNER
+      - ACT_SIT_IN_FRONT_OF_OWNER_AND_LOOK_UP
+      - ACT_WAIT_BY_BOWL_OR_TREAT_CABINET
+
+  stationary:
+    fidelity: proxy
+    description: StopMove keeps the current pose and prevents chassis motion.
+    sequence:
+      - {command: stop_move, duration_sec: 0.2}
+    actions:
+      - ACT_FLIP_BODY
+      - ACT_IGNORE_DELIVERY_BOX
+      - ACT_IGNORE_DOOR
+      - ACT_IGNORE_SLIPPERS_SOCKS_OR_TOY
+      - ACT_IGNORE_TISSUE
+      - ACT_IGNORE_TRASH_CAN
+      - ACT_RETURN_TO_CHARGER
+      - ACT_RETURN_TO_DOG_BED_FOR_CHARGING
+      - ACT_SLOW_DOWN_IN_RESPONSE_TO_OWNER
+      - ACT_TWITCH_OR_KICK_LEGS
+
+  stretch:
+    fidelity: proxy
+    description: SportMode Hello proxy for stretch body actions.
+    sequence:
+      - {command: hello, duration_sec: 2.5}
+    actions:
+      - ACT_STRETCH
+      - ACT_STRETCH_BODY
+
+  timid_retreat:
+    fidelity: proxy
+    description: Short backward step and lowered body expression for fear.
+    sequence:
+      - {command: move, x: -0.10, y: 0.0, z: 0.0, duration_sec: 0.8}
+      - {command: euler, x: 0.0, y: -0.12, z: 0.0, duration_sec: 0.7}
+      - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.2}
+    actions:
+      - ACT_CLING_LEG
+      - ACT_COVER_EYES
+      - ACT_LICK_FACE
+      - ACT_LICK_SELF
+      - ACT_PACE
+      - ACT_SEEK_PETS
+      - ACT_TUCK_TAIL
+
+  waist_twist:
+    fidelity: proxy
+    description: Left-right in-place body twist closing the feeding ritual.
+    sequence:
+      - {command: move, x: 0.0, y: 0.0, z: 0.45, duration_sec: 1.0}
+      - {command: move, x: 0.0, y: 0.0, z: -0.45, duration_sec: 2.0}
+      - {command: move, x: 0.0, y: 0.0, z: 0.45, duration_sec: 1.0}
+    actions:
+      - ACT_TWIST_WAIST_LEFT_RIGHT
+
+  yawn:
+    fidelity: proxy
+    description: Slow pitch-and-return body gesture; no facial yawn actuator.
+    sequence:
+      - {command: euler, x: 0.0, y: -0.15, z: 0.0, duration_sec: 1.2}
+      - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.4}
+    actions:
+      - ACT_YAWN

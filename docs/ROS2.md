@@ -27,7 +27,7 @@ Behavior Tree / Action Client ──► /execute_behavior Action Server
 ## 2. 严格行为注册
 
 Action Server 只接受
-[behavior_tree_actions.yaml](../config/behavior_tree_actions.yaml) 中的 53 个
+[behavior_tree_actions.yaml](../config/behavior_tree_actions.yaml) 中的 73 个
 直接行为名。
 
 不支持：
@@ -67,8 +67,8 @@ return GoalResponse.REJECT
 | Node | `action_executor_node` |
 | Action | `/execute_behavior` |
 | 类型 | `marsdog_interfaces/action/ExecuteBehavior` |
-| 行为数量 | 53 |
-| 运行时动作数量 | 188 |
+| 行为数量 | 73 |
+| 运行时动作数量 | 182 |
 | Feedback | 每个 Stage 完成后一次 |
 
 执行流程：
@@ -154,13 +154,15 @@ string  message
 | Topic | 类型 | 时机 |
 |---|---|---|
 | `/debug/execute_behavior/goal` | `std_msgs/msg/String` | Goal 接受并启动时 |
-| `/debug/execute_behavior/feedback` | `std_msgs/msg/String` | 每个 Stage 完成后 |
+| `/debug/execute_behavior/feedback` | `std_msgs/msg/String` | 每个 Stage 完成后；长期 Goal 运行期间每 0.5 秒持续发布阶段、周期和安全中断状态 |
 | `/debug/execute_behavior/result` | `std_msgs/msg/String` | 行为结束时 |
 
 `String.data` 是 JSON。
 
-AGV 启用后还会在运动段期间向 `/cmd_vel` 发布
-`geometry_msgs/msg/Twist`，默认频率为 10Hz；它不是 Debug Topic。
+Lite3 启用后还会在运动段期间向 `/cmd_vel` 发布
+`geometry_msgs/msg/Twist`；Go2 启用后向 `/api/sport/request` 发布
+`unitree_api/msg/Request`。两者默认运动刷新频率均为 10Hz，且都不是 Debug
+Topic。
 
 ### Goal JSON
 
@@ -245,6 +247,11 @@ Debug Topic 用于调试和当前仿真可视化。业务控制以 Action 为准
 | `source` | string |
 | `priority_level` | integer |
 | `target` | object |
+| `trigger_event` / `specific_event_type` | string，精确上游事件 |
+| `command_key` / `command_id` | string，语音词库键与稳定指令 ID |
+| `command_catalog_version` | string，语音词库版本 |
+| `intent_source` / `dispatch_role` | string，识别来源与分发角色 |
+| `voice_slots` | object，行为树审核后的语音槽位 |
 | `object_category` | string |
 | `sleep_depth` | string |
 | `elimination_type` | string |
@@ -254,9 +261,58 @@ Debug Topic 用于调试和当前仿真可视化。业务控制以 Action 为准
 | `use_wake_angle` | boolean |
 | `wake_angle_deg` | number（度） |
 | `wake_confidence` | number |
-| `wake_frame_id` | string，当前要求 `base_link` |
+| `wake_frame_id` | string，当前要求原始输入帧 `microphone_array` |
 
-`params_json` 不参与旧行为名称转换。
+`params_json` 不参与旧行为名称转换，也不能覆盖 Goal 顶层的
+`behavior_name`。语音身份字段只用于追踪和动作参数化；具体 Stage 与 `ACT_*` 仍由
+Action 的行为配置决定。
+
+### `approach_voice_caller` 强契约
+
+该行为精确映射为
+`ACT_INTERACT_APPROACH_VOICE_CALLER -> person_nav_approach`。除 `target` 外，
+`params_json` 必须包含：
+
+| 字段 | 约束 |
+|---|---|
+| `interaction_id` | 非空，必须与语音会话一致 |
+| `wake_id` | 非空，与当前唤醒声纹事件关联 |
+| `speaker_role` / `speaker_id` | `owner/owner` 或 `family/family_member_1..4` |
+| `speaker_status` | 必须为 `matched` |
+| `strict_target_lock` | 必须为 `true` |
+| `allow_target_switch` | 必须为 `false` |
+| `target.target_type` | 必须显式为 `human` |
+| `target.vision_epoch` / `target.target_id` | 目标 ID 必须以 `<vision_epoch>:human:` 开头 |
+| `stand_off_distance_m` | 有限且不少于 1.5 m |
+
+Action 向 `/perception/vision/task` 发一次 `locate_person_once`，由 Vision
+对目标框和原图 Header 做来源绑定，再调用 SLAM。只有响应 `ok=true`、
+`status=0`、目标 ID 一致、人体点有效且 `navigation_required=true` 时，
+Action 才向 `/navigate_to_pose` 发送一次地图目标；`false` 时直接完成。
+Lite3 在 Nav2 前执行底盘导航预检，Nav2 终态后确认退出遥控并停稳。
+取消受理不等于完成；Action 等 Nav2 真实 Result 后返回 CANCELED。
+内层终态未知时返回 FAILED 并锁定恢复状态，拒绝后续非急停 Goal。
+
+### 社交/动物/物体的先接近后动作
+
+13 个有明确视觉目标的 Social / Exploration 行为、六个普通
+`express*WithHuman`，以及三个主人定制行为，都会先执行
+`ACT_APPROACH_VISUAL_TARGET`。`target.target_type` 必须与行为策略一致，
+`target.target_id` 必须能唯一绑定到 `/perception/visual_event` 的
+`human_candidates`、`active_target` 或 `tracked_objects` 中同一稳定轨迹。
+上游带 `vision_epoch` 时必须完全一致；未带时仅允许绑定当前最新有效 epoch。
+
+人体社交目标使用锁定人体框高度闭环；动物和物体使用
+`range_valid=true` 的 `distance_m`。行为停止条件和速度上限在
+`config/visual_target_approach.yaml` 中配置。接近失败、取消或
+超时后，第 2 个互动/检查 Stage 不执行，Result 的 `metadata_json` 使用
+`visual_target_approach` 返回绑定目标、有效策略和终态原因。
+
+三个定制行为的精确表达动作分别是 `unhappy -> ACT_OWNER_UNHAPPY`、
+`miss_owner -> ACT_EXPRESS_MISS_YOU`、`farewell_leave -> ACT_OWNER_GOING_OUT`。
+其中 `farewell_leave` 的 3 秒到达保持会持续观察同一目标，主人走远时恢复受限
+接近；换人或目标丢失不会继续盲走。
+三者均要求 `target.identity=owner`；身份缺失或不匹配会在运动前失败。
 
 ## 7. 发送 Goal
 
@@ -338,25 +394,37 @@ ros2 launch marsdog_action_executor action_executor.launch.py
 
 所有 `config/*.yaml` 会安装到包 share 目录。
 
-### 启用 AGV
+### 启用 Go2
+
+先 source Unitree ROS2 工作空间，再互斥选择 Go2 后端：
 
 ```bash
 ros2 launch marsdog_action_executor action_executor.launch.py \
-  agv_enabled:=true \
-  agv_cmd_vel_topic:=/cmd_vel \
-  agv_publish_rate_hz:=10.0
+  chassis_type:=go2 \
+  go2_enabled:=true \
+  go2_request_topic:=/api/sport/request
 ```
 
-AGV 默认关闭。开启后，只有 `controller_routes.yaml` 中明确路由为 `agv` 的
-13 个直接指令动作会发布 Twist；其他动作等待后续导航功能。完整映射、安全
-边界和联调命令见
-[AGV ROS2 运动适配说明](AGV_ROS2_INTEGRATION.md)。
+Go2 只覆盖 `go2_sport.yaml` 中有实现的动作；未实现动作不会模拟成功。
+接口、动作表、视觉安全边界和真机验收见
+[Go2 ROS2 动作集成说明](GO2_ROS2_INTEGRATION.md)。
 
 `respond_owner_call → ACT_INTERACT_RESPOND_CALL` 使用独立的动态
-`wake_orientation` 路由。`agv_enabled:=true` 时默认把行为树传入的
-`wake_angle_deg` 转为 Nav2 `/spin` 的相对 yaw，不属于上述 13 个固定 Twist
+`wake_orientation` 路由。所选底盘启用时，默认把行为树传入的
+`microphone_array` 原始 `wake_angle_deg` 在 Action 内按 offset/sign 标定一次，
+转为 `base_link` 相对 yaw 后发送 Nav2 `/spin`，不属于上述固定 Twist
 运动组。字段契约、校准参数和测试命令见
 [唤醒声源朝向说明](WAKE_ORIENTATION_INTEGRATION.md)。
+
+`approach_voice_caller` 不是固定运动组。它用 Vision + SLAM 取得一次地图目标，
+再按需交给 Nav2 避障导航，不做实时人体跟随。Action Result 的
+`metadata_json.target_approach` 回传阶段、原因和是否导航。外层
+`timeout_sec` 与内部服务、导航超时均保持有限。
+
+Social / Exploration 的视觉目标接近同样不是固定运动组或 Nav2 点位。它通过
+`visual_target_approach` 路由直接闭环发布受限 Twist；只有到达并确认停车后才
+执行原行为动作。详细链路见
+[视觉目标接近说明](VISUAL_TARGET_APPROACH.md)。
 
 ### 充电完成结果
 
@@ -372,30 +440,35 @@ ros2 launch marsdog_action_executor action_executor.launch.py \
 失败、取消或超时结果不会携带成功充电电量；ROS Action 终态也会分别使用
 `abort`、`canceled`，不再一律标记为 succeed。
 
-### 启用 Nav2 语义点位
+### 启用 waypoint_nav 语义点位
 
-Nav2 适配使用正式 Action：
+YAML 精确地点名路由及保留随机目标 `K` 复用正式 Service 和状态 Topic：
 
 ```text
-/navigate_to_pose
-nav2_msgs/action/NavigateToPose
+/waypoint_nav/task   marsdog_voice_interaction/srv/VoiceTask
+/waypoint_nav/status std_msgs/msg/String JSON
 ```
 
-启动时必须同时启用 AGV 和导航：
+随机行为不再由 Action 生成 Pose 或在固定点中抽选；每次调用
+`/waypoint_nav/task` 并发送 `task_type="goto_place"`、`place="K"`，由
+`waypoint_nav` 使用实时 `/map` 选点。
+
+启动时必须同时启用所选底盘和导航。Lite3 示例：
 
 ```bash
 ros2 launch marsdog_action_executor action_executor.launch.py \
-  agv_enabled:=true \
+  chassis_type:=lite3 \
+  lite3_enabled:=true \
   navigation_enabled:=true \
-  agv_cmd_vel_topic:=/cmd_vel \
-  navigation_action_name:=/navigate_to_pose \
-  navigation_frame_id:=map \
-  navigation_server_timeout_sec:=10.0 \
+  waypoint_nav_service_name:=/waypoint_nav/task \
+  waypoint_nav_status_topic:=/waypoint_nav/status \
+  waypoint_nav_cancel_confirmation_timeout_sec:=5.0 \
+  navigation_preempt_lock_wait_sec:=8.0 \
   navigation_result_timeout_sec:=300.0
 ```
 
-当前 A–E 点位、11 个首批行为、精确 `ACT_*` 到到点运动组映射，以及取消/急停
-规则见 [Nav2 语义点位适配说明](NAV2_WAYPOINT_INTEGRATION.md)。
+当前 YAML 地点名、11 个首批行为、精确 `ACT_*` 到平台动作映射，以及取消/急停
+规则见 [waypoint_nav 点位适配说明](NAV2_WAYPOINT_INTEGRATION.md)。
 
 ## 10. 验证
 
@@ -415,9 +488,9 @@ uv run pytest -q tests/test_behavior_tree_action_contract.py
 
 测试覆盖：
 
-- 53 个行为；
-- 211 条动作记录；
-- 188 个唯一动作；
+- 73 个行为；
+- 269 条动作记录；
+- 182 个唯一动作；
 - 运行时动作目录恰好等于新表引用集合；
 - 旧行为名被拒绝；
 - 旧动作不进入运行时目录。
@@ -425,9 +498,12 @@ uv run pytest -q tests/test_behavior_tree_action_contract.py
 ## 11. 相关文件
 
 - [仿真页面接入说明](SIMULATION_PAGE_INTEGRATION.md)
-- [AGV ROS2 运动适配说明](AGV_ROS2_INTEGRATION.md)
-- [Nav2 语义点位适配说明](NAV2_WAYPOINT_INTEGRATION.md)
+- [Go2 ROS2 动作集成说明](GO2_ROS2_INTEGRATION.md)
+- [Lite3 ROS2 动作集成说明](LITE3_ROS2_INTEGRATION.md)
+- [Go2 ROS2 动作集成说明](GO2_ROS2_INTEGRATION.md)
+- [waypoint_nav 点位适配说明](NAV2_WAYPOINT_INTEGRATION.md)
 - [唤醒声源朝向说明](WAKE_ORIENTATION_INTEGRATION.md)
+- [视觉目标接近说明](VISUAL_TARGET_APPROACH.md)
 - [行为树动作契约](BEHAVIOR_TREE_ACTION_CONTRACT.md)
 - [行为动作映射说明](BEHAVIOR_ACTION_MAP.md)
 - [行为配置](../config/behavior_tree_actions.yaml)

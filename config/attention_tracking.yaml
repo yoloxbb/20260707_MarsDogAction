@@ -1,13 +1,39 @@
 action_executor_node:
   ros__parameters:
-    # Visual follow speed tuning. Keep follow_max_linear_x at or below the
-    # chassis safety limit in config/agv_motion_groups.yaml.
-    follow_linear_gain: 0.75
+    # Legacy visual-follow parameters retained for launch compatibility.
+    # follow_owner now uses config/uwb_follow.yaml and ignores these values.
+    follow_linear_gain: 1.00
     follow_max_linear_x: 0.25
-    follow_max_linear_accel: 0.35
+    follow_max_linear_accel: 0.50
 
-    # Desired following distance and steering safety thresholds.
+    # Legacy visual-follow distance and steering thresholds.
     follow_target_height: 0.68
     follow_height_deadband: 0.05
     follow_activation_deadband: 0.10
     follow_max_heading_error: 0.30
+
+    # One-shot, closed-loop approach used by approach_voice_caller.  Metric
+    # distance from Vision is authoritative.  The bbox fallback is only for an
+    # explicitly enabled demonstration and is disabled in formal runtime.
+    target_approach_enabled: true
+    target_approach_publish_rate_hz: 10.0
+    target_approach_min_confidence: 0.60
+    target_approach_visual_timeout_sec: 0.8
+    target_approach_acquire_timeout_sec: 3.0
+    target_approach_lost_timeout_sec: 1.0
+    target_approach_timeout_sec: 20.0
+    target_approach_stop_distance_m: 1.20
+    target_approach_minimum_safe_distance_m: 0.80
+    target_approach_distance_deadband_m: 0.15
+    target_approach_arrival_hold_sec: 0.5
+    target_approach_linear_gain: 0.50
+    target_approach_angular_gain: 0.80
+    target_approach_max_linear_x: 0.15
+    target_approach_max_angular_z: 0.30
+    target_approach_max_linear_accel: 0.20
+    target_approach_max_angular_accel: 0.30
+    target_approach_heading_deadband: 0.06
+    target_approach_max_heading_error: 0.25
+    target_approach_allow_bbox_distance_fallback: false
+    target_approach_demo_target_height: 0.68
+    target_approach_demo_height_deadband: 0.05

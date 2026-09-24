@@ -1,4 +1,4 @@
-"""Session-scoped visual centering controller for the AGV chassis."""
+"""Session-scoped visual centering controller for the selected chassis."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import threading
 import time
 from typing import Any
 
-from .agv_adapter import TwistCommand
+from .velocity import TwistCommand
 
 
 class AttentionTrackingController:
@@ -25,13 +25,16 @@ class AttentionTrackingController:
         visual_timeout_sec: float = 0.8,
         wake_gain: float = 0.8,
         wake_fallback_sec: float = 2.0,
+        wake_angle_zero_offset_deg: float = 90.0,
+        wake_angle_direction_sign: float = -1.0,
+        wake_angle_deadband_deg: float = 5.0,
         direction_sign: float = -1.0,
         follow_target_height: float = 0.68,
         follow_height_deadband: float = 0.05,
         follow_activation_deadband: float = 0.10,
-        follow_linear_gain: float = 0.55,
+        follow_linear_gain: float = 1.0,
         follow_max_linear_x: float = 0.22,
-        follow_max_linear_accel: float = 0.20,
+        follow_max_linear_accel: float = 0.50,
         follow_max_heading_error: float = 0.30,
     ) -> None:
         self._gain = abs(float(gain))
@@ -47,6 +50,15 @@ class AttentionTrackingController:
         self._visual_timeout_sec = max(0.05, float(visual_timeout_sec))
         self._wake_gain = abs(float(wake_gain))
         self._wake_fallback_sec = max(0.0, float(wake_fallback_sec))
+        self._wake_angle_zero_offset_deg = float(
+            wake_angle_zero_offset_deg
+        )
+        self._wake_angle_direction_sign = math.copysign(
+            1.0, float(wake_angle_direction_sign)
+        )
+        self._wake_angle_deadband_deg = min(
+            179.999, max(0.0, abs(float(wake_angle_deadband_deg)))
+        )
         self._direction_sign = math.copysign(1.0, float(direction_sign))
         self._follow_target_height = min(
             1.0, max(0.05, float(follow_target_height))
@@ -244,6 +256,11 @@ class AttentionTrackingController:
             body_height = self._body_height
             mode = self._mode
 
+        # The selected chassis UWB backend owns follow motion in this mode, so
+        # the visual controller must not publish a competing command.
+        if mode == "follow_owner":
+            return None
+
         if (
             visual_error is not None
             and now - visual_updated_at <= self._visual_timeout_sec
@@ -296,8 +313,11 @@ class AttentionTrackingController:
             return TwistCommand(linear_x=linear, angular_z=angular)
 
         if now - started_at <= self._wake_fallback_sec:
-            relative_deg = (wake_angle_deg + 180.0) % 360.0 - 180.0
-            if abs(relative_deg) <= 5.0:
+            calibrated_deg = self._wake_angle_direction_sign * (
+                wake_angle_deg - self._wake_angle_zero_offset_deg
+            )
+            relative_deg = (calibrated_deg + 180.0) % 360.0 - 180.0
+            if abs(relative_deg) <= self._wake_angle_deadband_deg:
                 return TwistCommand()
             angular = self._wake_gain * math.radians(relative_deg)
             return TwistCommand(angular_z=self._slew(angular, now))

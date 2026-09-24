@@ -1,19 +1,28 @@
-# Behavior audio configuration. Playback starts after navigation, together
-# with the first behavior Stage. It stops on completion, cancellation,
-# preemption, emergency stop, or node shutdown.
+# Behavior audio configuration. Behavior-level playback starts after
+# navigation, together with the first behavior Stage. stage_sounds entries
+# additionally scope a file to one exact Stage and stop it when that Stage
+# returns. Either way audio stops on completion, cancellation, preemption,
+# emergency stop, or node shutdown.
 
 bark_sound:
   enabled: true
 
   # Path to the MP3 / WAV audio file.
-  file: "/home/cat/桌面/dog_voice1.mp3"
+  file: "sounds/好奇.mp3"
 
   # Behaviors that trigger bark playback.
   voice_command_behaviors:
     - respond_owner_call
+    - walk_to_random_point
+    - go_out_to_play
+    - go_home
+    - approach_owner
+    - back_up
     - sit_down
     - lie_down
     - stand_up
+    - stand_still
+    - hold_position
     - wait_in_place
     - come_to_owner
     - follow_owner
@@ -28,8 +37,29 @@ bark_sound:
     - fetch_object
     - emergency_stop
 
+  # Control behaviors stop any active stream and never start confirmation audio.
+  stop_behaviors:
+    - quiet
+
   # Exact behavior -> packaged audio file. Relative paths resolve from config/.
   behavior_sounds:
+    quiet: null
+    # The five feeding behaviors run the same arrival ritual, so they share one
+    # eating sound. A missing key here would fall back to the generic file in
+    # voice_command_behaviors; these are explicit so that fallback never fires.
+    eatNormally: sounds/进食.mp3
+    eatExcitedly: sounds/进食.mp3
+    seekFood: sounds/进食.mp3
+    seekFoodUrgently: sounds/进食.mp3
+    inspectDogFood: sounds/进食.mp3
+    # Calm has no dedicated packaged asset. Explicit null means intentional
+    # silence and prevents fallback to the generic bark sound.
+    expressCalmInPlaceWithHuman: null
+    expressJoyInPlaceWithHuman: sounds/兴奋愉悦.wav
+    expressExcitementInPlaceWithHuman: sounds/兴奋愉悦.wav
+    expressAnxietyInPlaceWithHuman: sounds/焦虑.wav
+    expressFearInPlaceWithHuman: sounds/恐惧.wav
+    expressCuriosityInPlaceWithHuman: sounds/好奇.mp3
     expressCuriosityWithHuman: sounds/好奇.mp3
     expressCuriosityAlone: sounds/好奇.mp3
     expressFearWithHuman: sounds/恐惧.wav
@@ -40,3 +70,27 @@ bark_sound:
     expressExcitementAlone: sounds/兴奋愉悦.wav
     expressJoyWithHuman: sounds/兴奋愉悦.wav
     expressJoyAlone: sounds/兴奋愉悦.wav
+
+  # Exact behavior -> exact Stage -> packaged audio file. A stage sound plays
+  # only while that Stage executes and is stopped the moment the Stage returns;
+  # it replaces the behavior-level stream for its duration and never resumes it.
+  #
+  # There is deliberately NO fallback here: an unlisted behavior or Stage is
+  # simply silent, and unlike behavior_sounds a null value is rejected by
+  # ConfigLoader. Sleep has no behavior-level entry either — the snore is meant
+  # to sound only while the dog is actually down.
+  #
+  # 2026-09-20: sleep_pose alone only lasts ~3.4 s on Lite3, which the operator
+  # could not hear over the motors of the lie-down itself, so the snore now
+  # covers both stages of being down: sleep_pose (lying down) and sleeping
+  # (holding the pose), ~8.4 s together. Each Stage starts the file from the
+  # top, and the file opens on the snore, so the two overlap seamlessly.
+  # circle / prepare / wakeup stay silent on purpose — the dog should not snore
+  # while it is still up and circling, or while it is getting back to its feet.
+  stage_sounds:
+    sleepOnSide:
+      sleep_pose: sounds/睡觉呼噜.mp3
+      sleeping: sounds/睡觉呼噜.mp3
+    sleepNow:
+      sleep_pose: sounds/睡觉呼噜.mp3
+      sleeping: sounds/睡觉呼噜.mp3

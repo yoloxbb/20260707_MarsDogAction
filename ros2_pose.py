@@ -154,19 +154,12 @@ if __name__ == '__main__':
         with open('waypoints.yaml', 'w') as f:
             yaml.dump({'waypoints': {}}, f, default_flow_style=False)
 
-    # goals = {
-    #     'A': waypoints.get('A', [-1.085, 3.348, 0.951, 0.309]),
-    #     'B': waypoints.get('B', [-2.395, 2.572, -0.844, 0.537]),
-    #     'C': waypoints.get('C', [-2.549, -0.131, -0.407, 0.913]),
-    #     'D': waypoints.get('D', [-1.382, -1.121, 0.465, 0.886]),
-    #     'E': waypoints.get('E', [-0.133, 0.695,  0.473, 0.881]),
-    # }
     goals = {
-        'A': waypoints.get('A', [-0.847, -0.423, 0.988, -0.155]),
-        'B': waypoints.get('B', [-3.025, -1.709, 0.996, -0.087]),
-        'C': waypoints.get('C', [-2.459, 1.806, 0.161, 0.987]),
-        'D': waypoints.get('D', [-4.197, 2.982, 0.149, 0.989]),
-        'E': waypoints.get('E', [-1.144, 4.430,  -0.599, 0.801]),
+        'A': waypoints.get('A', [-3.715, -1.065, 0.136, 0.991]),
+        'B': waypoints.get('B', [-1.855, -0.665, 0.790, 0.613]),
+        'C': waypoints.get('C', [-2.961, 1.478, 0.259, 0.966]),
+        'D': waypoints.get('D', [-1.905, 3.360, -0.708, 0.706]),
+        'E': waypoints.get('E', [-4.039, 2.627, -0.421, 0.907]),
     }
     args = cli_args.targets
     loop_targets = False
@@ -210,20 +203,3 @@ if __name__ == '__main__':
     finally:
         if rclpy.ok():
             rclpy.shutdown()
-
-"""
-
-
-    goals = {
-        'A': waypoints.get('A', [-0.847, -0.423, 0.988, -0.155]),
-        'B': waypoints.get('B', [-3.025, -1.709, 0.996, -0.087]),
-        'C': waypoints.get('C', [-2.459, 1.806, 0.161, 0.987]),
-        'D': waypoints.get('D', [-4.197, 2.982, 0.149, 0.989]),
-        'E': waypoints.get('E', [-1.144, 4.430,  -0.599, 0.801]),
-    }
-
-[-0.215, -0.651,  0.975, -0.221]
-[-3.627, -1.788,   0.989, -0.150]
-[[-4.682, 3.105,  0.776, 0.631]
-[-1.334, 4.416,  0.092, 0.996]
-"""

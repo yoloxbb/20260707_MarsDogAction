@@ -1,18 +1,37 @@
 # Dynamic wake-source orientation through Nav2 Spin.
 #
-# This adapter is created only when both this flag and agv_enabled are true.
-# The upstream behavior tree must send wake_angle_deg in base_link.
+# This adapter is created when this flag and the selected chassis backend are enabled.
+# Voice publishes the raw microphone-array angle.  This Action adapter is the
+# sole calibration owner and converts it to a base_link-relative yaw.
 
 enabled: true
 action_name: /spin
-required_frame_id: base_link
+required_frame_id: microphone_array
 server_timeout_sec: 5.0
 result_timeout_sec: 15.0
 time_allowance_sec: 12.0
 
 # Calibration:
+# The installed XFYun dual-microphone module reports a 0..180 degree arc:
+# approximately 90 degrees is straight ahead. The installed array's increasing
+# angle direction is opposite to positive ROS yaw, as confirmed on the chassis.
 #   relative_ros_deg = direction_sign * (raw_deg - zero_offset_deg)
 # Positive ROS yaw is counter-clockwise (left turn).
-angle_zero_offset_deg: 0.0
-angle_direction_sign: 1.0
+angle_zero_offset_deg: 90.0
+angle_direction_sign: -1.0
 angle_deadband_deg: 5.0
+
+# A linear four-microphone array cannot reliably distinguish the front and
+# rear mirrored directions. After the first Spin, wait for a fresh tracked
+# human; when absent, rotate to the mirrored rear candidate and check again.
+#
+# Off by default (2026-09-20): that confirmation depends entirely on
+# /perception/visual_event, and while nothing publishes that topic the wait
+# can never succeed -- every wake then ends up on the mirrored heading, i.e.
+# 180 - r away from the source, and a straight-ahead wake spins a full 180
+# degrees. Turn this on only once a live visual-event publisher exists; see
+# docs/WAKE_ORIENTATION_INTEGRATION.md.
+linear_array_back_search_enabled: false
+visual_confirm_timeout_sec: 1.5
+visual_min_confidence: 0.60
+visual_max_age_ms: 800.0

@@ -14,15 +14,15 @@ import threading
 import time
 from typing import Any, Callable, Mapping
 
-# Sentinel returned by waypoint_for_behavior when the behavior should navigate
-# to a randomly generated pose rather than a fixed waypoint.
+# Sentinel returned by waypoint_for_behavior for waypoint_nav's reserved
+# live-map random target.
 _RANDOM_WAYPOINT_SENTINEL = "__random__"
 
 logger = logging.getLogger(__name__)
 
 
 class BehaviorMobilityAdapter:
-    """Navigate routed behaviors, then execute their existing stages as Twist."""
+    """Navigate routed behaviors, then execute their platform action stages."""
 
     def __init__(
         self,
@@ -30,15 +30,23 @@ class BehaviorMobilityAdapter:
         motion_adapter: Any,
         waypoints: Mapping[str, Mapping[str, Any]],
         behavior_routes: Mapping[str, Mapping[str, Any]],
-        action_motion_groups: Mapping[str, str],
+        stage_actions: list[str],
         *,
+        navigate_fixed_place: Callable[..., bool] | None = None,
+        fixed_places: Mapping[str, str] | None = None,
         result_timeout_sec: float = 300.0,
         random_navigation_behaviors: list[str] | None = None,
-        random_navigation_bounds: Mapping[str, float] | None = None,
-        random_navigation_region: Mapping[str, Any] | None = None,
-        random_navigation_exclude_waypoints: list[str] | None = None,
+        random_navigation_place: str | None = None,
+        random_navigation_result_timeout_sec: float | None = None,
+        random_navigation_in_place_probability: Mapping[str, float] | None = None,
+        random_navigation_fixed_pool: list[str] | None = None,
     ) -> None:
         self._navigate_waypoint = navigate_waypoint
+        self._navigate_fixed_place = navigate_fixed_place
+        self._fixed_places = {
+            str(name): str(place)
+            for name, place in (fixed_places or {}).items()
+        }
         self._motion_adapter = motion_adapter
         self._waypoints = {
             name: dict(config) for name, config in waypoints.items()
@@ -50,7 +58,8 @@ class BehaviorMobilityAdapter:
             }
             for name, config in behavior_routes.items()
         }
-        self._action_motion_groups = dict(action_motion_groups)
+        self._stage_actions = set(stage_actions)
+        self._last_error = ""
         self._result_timeout_sec = float(result_timeout_sec)
         if (
             not math.isfinite(self._result_timeout_sec)
@@ -58,50 +67,56 @@ class BehaviorMobilityAdapter:
         ):
             raise ValueError("result_timeout_sec must be finite and > 0")
 
-        # ── Random navigation support ──────────────────────────────────
+        # ── waypoint_nav live-map random navigation ─────────────────
         self._random_navigation_behaviors: set[str] = set(
             random_navigation_behaviors or []
         )
-        # Parse polygon region (new) or fall back to bounds (legacy).
-        region = dict(random_navigation_region or {})
-        polygon_raw = region.get("polygon")
-        if polygon_raw and isinstance(polygon_raw, list) and len(polygon_raw) >= 3:
-            self._random_region_polygon: list[tuple[float, float]] = [
-                (float(pt[0]), float(pt[1])) for pt in polygon_raw
-            ]
-        else:
-            # Legacy bounds mode: construct a rectangular polygon.
-            bnd = dict(random_navigation_bounds or {})
-            x_min = float(bnd.get("x_min", -32.4))
-            x_max = float(bnd.get("x_max", 9.2))
-            y_min = float(bnd.get("y_min", -10.0))
-            y_max = float(bnd.get("y_max", 22.0))
-            self._random_region_polygon = [
-                (x_min, y_min),
-                (x_max, y_min),
-                (x_max, y_max),
-                (x_min, y_max),
-            ]
-        # Build set of waypoint coords to exclude from random generation.
-        exclude_names = set(random_navigation_exclude_waypoints or [])
-        self._excluded_coords: set[tuple[float, float]] = set()
-        for wpt_name in exclude_names:
-            wpt = self._waypoints.get(wpt_name)
-            if wpt is not None:
-                self._excluded_coords.add(
-                    (float(wpt["x"]), float(wpt["y"]))
-                )
+        self._random_navigation_place = str(
+            random_navigation_place or ""
+        ).strip()
+        timeout = (
+            self._result_timeout_sec
+            if random_navigation_result_timeout_sec is None
+            else float(random_navigation_result_timeout_sec)
+        )
+        if not math.isfinite(timeout) or timeout <= 0.0:
+            raise ValueError(
+                "random_navigation_result_timeout_sec must be finite and > 0"
+            )
+        self._random_navigation_result_timeout_sec = timeout
+
+        # Per-behavior probability of staying in place (skipping the random
+        # navigation) instead of walking around.  Only emotion-expression
+        # ``express*Alone`` behaviors should be present here.
+        self._random_navigation_in_place: dict[str, float] = {
+            name: float(prob)
+            for name, prob in (
+                random_navigation_in_place_probability or {}
+            ).items()
+        }
+
+        # Temporary override: while non-empty, each random navigation picks
+        # one of these fixed waypoints (resolved through ``fixed_places``)
+        # instead of asking waypoint_nav for a live-map random target.
+        self._random_navigation_fixed_pool: list[str] = [
+            str(name) for name in (random_navigation_fixed_pool or [])
+        ]
 
     @property
     def routed_behaviors(self) -> set[str]:
         return set(self._behavior_routes)
+
+    @property
+    def last_error(self) -> str:
+        return self._last_error
 
     def waypoint_for_behavior(self, behavior_name: str) -> str | None:
         """Return the waypoint name for a behavior, or the random sentinel.
 
         Returns:
             * A waypoint name (``str``) for fixed-waypoint behaviors.
-            * ``_RANDOM_WAYPOINT_SENTINEL`` for random-navigation behaviors.
+            * ``_RANDOM_WAYPOINT_SENTINEL`` for behaviors which request the
+              reserved waypoint_nav random target.
             * ``None`` if the behavior has no navigation routing.
         """
         if behavior_name in self._random_navigation_behaviors:
@@ -122,7 +137,10 @@ class BehaviorMobilityAdapter:
         behavior_name: str,
         *,
         timeout_sec: float | None = None,
+        task_id: str | None = None,
+        status_callback: Callable[[Any], None] | None = None,
     ) -> bool:
+        self._last_error = ""
         waypoint_name = self.waypoint_for_behavior(behavior_name)
         if waypoint_name is None:
             return True
@@ -133,192 +151,203 @@ class BehaviorMobilityAdapter:
                 effective_timeout = min(effective_timeout, float(timeout_sec))
 
         if waypoint_name is _RANDOM_WAYPOINT_SENTINEL:
-            waypoint = self._generate_random_pose()
-            logger.info(
-                "Navigating behavior %s to random pose: "
-                "x=%.3f, y=%.3f, oz=%.3f, ow=%.3f",
-                behavior_name,
-                waypoint["x"],
-                waypoint["y"],
-                waypoint["orientation_z"],
-                waypoint["orientation_w"],
-            )
-            return bool(
-                self._navigate_waypoint(
-                    "_random_",
-                    waypoint,
-                    effective_timeout,
+            in_place_prob = self._random_navigation_in_place.get(behavior_name)
+            if in_place_prob is not None and random.random() < in_place_prob:
+                logger.info(
+                    "Behavior %s stays in place (skipped random navigation, "
+                    "probability=%.2f)",
+                    behavior_name,
+                    in_place_prob,
                 )
+                return True
+            if self._navigate_fixed_place is None:
+                logger.error(
+                    "Random navigation behavior %s requires waypoint_nav",
+                    behavior_name,
+                )
+                return False
+            random_target = self._pick_random_navigation_target(behavior_name)
+            if not random_target:
+                logger.error(
+                    "Random navigation behavior %s has no configured "
+                    "waypoint_nav random target",
+                    behavior_name,
+                )
+                return False
+            if not task_id:
+                logger.error(
+                    "Random navigation behavior %s requires a registered "
+                    "task_id",
+                    behavior_name,
+                )
+                return False
+            logger.info(
+                "Navigating behavior %s through waypoint_nav random target %s",
+                behavior_name,
+                random_target,
+            )
+            return self._navigate_fixed_with_chassis(
+                task_id,
+                random_target,
+                min(
+                    effective_timeout,
+                    self._random_navigation_result_timeout_sec,
+                ),
+                status_callback,
             )
 
-        waypoint = self._waypoints[waypoint_name]
+        return self._navigate_named_waypoint(
+            waypoint_name,
+            behavior_name=behavior_name,
+            task_id=task_id,
+            timeout_sec=effective_timeout,
+            status_callback=status_callback,
+        )
+
+    def _pick_random_navigation_target(self, behavior_name: str) -> str:
+        """Resolve the waypoint_nav place for a random-navigation behavior.
+
+        When the temporary ``random_navigation_fixed_pool`` override is
+        non-empty it wins: one of those fixed waypoints is picked at random on
+        every call and resolved through the same ``places`` mapping the fixed
+        routes use, so the chosen target is a known point.  Otherwise the
+        reserved live-map random target is returned unchanged.
+        """
+        if self._random_navigation_fixed_pool:
+            waypoint_name = random.choice(self._random_navigation_fixed_pool)
+            place = self._fixed_places.get(waypoint_name, waypoint_name)
+            logger.info(
+                "Behavior %s draws fixed random-pool waypoint %s -> place %s",
+                behavior_name,
+                waypoint_name,
+                place,
+            )
+            return place
+        return self._random_navigation_place
+
+    def _navigate_named_waypoint(
+        self,
+        waypoint_name: str,
+        *,
+        behavior_name: str,
+        task_id: str | None,
+        timeout_sec: float,
+        status_callback: Callable[[Any], None] | None,
+    ) -> bool:
+        waypoint = self._waypoints.get(waypoint_name)
+        if waypoint is None:
+            logger.error("Unknown registered waypoint %s", waypoint_name)
+            return False
         logger.info(
             "Navigating behavior %s to waypoint %s (%s)",
             behavior_name,
             waypoint_name,
             waypoint.get("label", ""),
         )
-        return bool(
-            self._navigate_waypoint(
-                waypoint_name,
-                waypoint,
-                effective_timeout,
-            )
-        )
-
-    # ── Random pose generation ────────────────────────────────────────
-
-    @staticmethod
-    def _triangle_area(
-        a: tuple[float, float],
-        b: tuple[float, float],
-        c: tuple[float, float],
-    ) -> float:
-        """Signed area of triangle (a, b, c); positive if CCW."""
-        return 0.5 * abs(
-            (b[0] - a[0]) * (c[1] - a[1])
-            - (c[0] - a[0]) * (b[1] - a[1])
-        )
-
-    @staticmethod
-    def _sample_triangle(
-        a: tuple[float, float],
-        b: tuple[float, float],
-        c: tuple[float, float],
-    ) -> tuple[float, float]:
-        """Uniformly sample a point inside triangle (a, b, c)."""
-        r1 = random.random()
-        r2 = random.random()
-        if r1 + r2 > 1.0:
-            r1 = 1.0 - r1
-            r2 = 1.0 - r2
-        return (
-            a[0] + r1 * (b[0] - a[0]) + r2 * (c[0] - a[0]),
-            a[1] + r1 * (b[1] - a[1]) + r2 * (c[1] - a[1]),
-        )
-
-    @staticmethod
-    def _point_in_polygon(
-        x: float,
-        y: float,
-        poly: list[tuple[float, float]],
-    ) -> bool:
-        """Ray-casting test: is (x, y) inside the polygon?"""
-        inside = False
-        n = len(poly)
-        j = n - 1
-        for i in range(n):
-            xi, yi = poly[i]
-            xj, yj = poly[j]
-            if ((yi > y) != (yj > y)) and (
-                x < (xj - xi) * (y - yi) / (yj - yi) + xi
-            ):
-                inside = not inside
-            j = i
-        return inside
-
-    def _generate_random_pose(self) -> dict[str, Any]:
-        """Generate a random navigable pose inside the configured polygon.
-
-        Uses triangle-area-weighted sampling for uniform distribution over
-        a convex polygon.  Falls back to the polygon centroid on failure.
-
-        Returns:
-            A dict with keys ``x``, ``y``, ``orientation_z``,
-            ``orientation_w``, ``frame_id``, and ``label``.
-        """
-        poly = self._random_region_polygon
-        n = len(poly)
-
-        if n < 3:
-            logger.error("Random region polygon has fewer than 3 vertices.")
-            return {
-                "x": 0.0, "y": 0.0,
-                "orientation_z": 0.0, "orientation_w": 1.0,
-                "frame_id": "map", "label": "random (fallback)",
-            }
-
-        # ── Triangulate from vertex 0 ────────────────────────────────
-        # For convex polygon [v0, v1, …, v_{n-1}], triangles are
-        # (v0, v_i, v_{i+1}) for i=1,…,n-2.
-        triangles: list[
-            tuple[
-                tuple[float, float],
-                tuple[float, float],
-                tuple[float, float],
-            ]
-        ] = []
-        areas: list[float] = []
-        v0 = poly[0]
-        for i in range(1, n - 1):
-            tri = (v0, poly[i], poly[i + 1])
-            triangles.append(tri)
-            areas.append(self._triangle_area(*tri))
-
-        total_area = sum(areas)
-        if total_area <= 0.0:
-            logger.error("Random region polygon has zero area.")
-            return {
-                "x": 0.0, "y": 0.0,
-                "orientation_z": 0.0, "orientation_w": 1.0,
-                "frame_id": "map", "label": "random (fallback)",
-            }
-
-        # ── Rejection sampling against excluded waypoints ────────────
-        max_attempts = 200
-        for _ in range(max_attempts):
-            # Pick triangle proportional to its area.
-            pick = random.uniform(0.0, total_area)
-            cumulative = 0.0
-            chosen_tri = triangles[0]
-            for tri, area in zip(triangles, areas):
-                cumulative += area
-                if pick <= cumulative:
-                    chosen_tri = tri
-                    break
-
-            x, y = self._sample_triangle(*chosen_tri)
-
-            # Safety net: verify the point is actually inside the polygon.
-            if not self._point_in_polygon(x, y, poly):
-                continue
-
-            # Exclude points too close to internal-need waypoints.
-            if self._excluded_coords:
-                too_close = any(
-                    math.hypot(x - ex, y - ey) < 0.5
-                    for ex, ey in self._excluded_coords
+        if self._navigate_fixed_place is not None:
+            if not task_id:
+                logger.error(
+                    "Fixed waypoint %s requires a registered task_id",
+                    waypoint_name,
                 )
-                if too_close:
-                    continue
-
-            yaw = random.uniform(-math.pi, math.pi)
-            half_yaw = yaw * 0.5
-            return {
-                "x": x,
-                "y": y,
-                "orientation_z": math.sin(half_yaw),
-                "orientation_w": math.cos(half_yaw),
-                "frame_id": "map",
-                "label": "random",
-            }
-
-        # ── Fallback: polygon centroid ───────────────────────────────
-        logger.warning(
-            "Could not generate a random pose inside polygon after "
-            "%d attempts; using centroid.",
-            max_attempts,
+                return False
+            place = self._fixed_places.get(waypoint_name)
+            if not place:
+                logger.error(
+                    "Fixed waypoint %s has no waypoint_nav place",
+                    waypoint_name,
+                )
+                return False
+            return self._navigate_fixed_with_chassis(
+                task_id,
+                place,
+                timeout_sec,
+                status_callback,
+            )
+        # Backward-compatible injection path used by ROS-independent tests and
+        # integrators which have not enabled the shared point-name service.
+        return self._navigate_with_chassis(
+            waypoint_name, waypoint, timeout_sec
         )
-        cx = sum(v[0] for v in poly) / n
-        cy = sum(v[1] for v in poly) / n
-        return {
-            "x": cx,
-            "y": cy,
-            "orientation_z": 0.0,
-            "orientation_w": 1.0,
-            "frame_id": "map",
-            "label": "random (fallback)",
-        }
+
+    def _navigate_fixed_with_chassis(
+        self,
+        task_id: str,
+        place: str,
+        timeout_sec: float,
+        status_callback: Callable[[Any], None] | None,
+    ) -> bool:
+        """Run platform hooks around a named ``waypoint_nav`` task."""
+        prepare = getattr(self._motion_adapter, "prepare_navigation", None)
+        finish = getattr(self._motion_adapter, "finish_navigation", None)
+        if callable(prepare) and not bool(prepare()):
+            logger.error("Chassis rejected navigation preflight")
+            self._last_error = self._motion_failure_reason(
+                "chassis_navigation_preflight_failed"
+            )
+            return False
+        navigation_ok = False
+        finish_ok = True
+        try:
+            navigation_ok = bool(
+                self._navigate_fixed_place(
+                    task_id,
+                    place,
+                    timeout_sec,
+                    status_callback,
+                )
+            )
+        finally:
+            if callable(finish):
+                finish_result = finish()
+                finish_ok = finish_result is not False
+        if navigation_ok and not finish_ok:
+            logger.error("Chassis did not settle after waypoint navigation")
+            self._last_error = self._motion_failure_reason(
+                "chassis_navigation_settle_failed"
+            )
+        return navigation_ok and finish_ok
+
+    def _navigate_with_chassis(
+        self,
+        waypoint_name: str,
+        waypoint: Mapping[str, Any],
+        timeout_sec: float,
+    ) -> bool:
+        """Run optional platform mode hooks around an external Nav2 goal."""
+        prepare = getattr(self._motion_adapter, "prepare_navigation", None)
+        finish = getattr(self._motion_adapter, "finish_navigation", None)
+        if callable(prepare) and not bool(prepare()):
+            logger.error("Chassis rejected navigation preflight")
+            self._last_error = self._motion_failure_reason(
+                "chassis_navigation_preflight_failed"
+            )
+            return False
+        navigation_ok = False
+        finish_ok = True
+        try:
+            navigation_ok = bool(
+                self._navigate_waypoint(
+                    waypoint_name,
+                    waypoint,
+                    timeout_sec,
+                )
+            )
+        finally:
+            if callable(finish):
+                finish_result = finish()
+                finish_ok = finish_result is not False
+        if navigation_ok and not finish_ok:
+            logger.error("Chassis did not settle after Nav2 navigation")
+            self._last_error = self._motion_failure_reason(
+                "chassis_navigation_settle_failed"
+            )
+        return navigation_ok and finish_ok
+
+    def _motion_failure_reason(self, fallback: str) -> str:
+        return str(
+            getattr(self._motion_adapter, "last_error", "") or fallback
+        ).strip()
 
     def execute_step(
         self,
@@ -326,26 +355,28 @@ class BehaviorMobilityAdapter:
         ctx: Any,
         duration: float | None = None,
     ) -> bool:
-        """Execute the Twist proxy configured for the current existing stage."""
+        """Execute the platform action configured for the current stage."""
         behavior_name = str(getattr(ctx, "resolved_behavior_name", ""))
         stage_id = str(getattr(ctx, "current_stage", ""))
+        if behavior_name in self._random_navigation_behaviors:
+            if stage_id != "navigation":
+                return False
+            return self.hold_position(duration)
         route = self._behavior_routes.get(behavior_name)
         if route is None or stage_id not in route["stages"]:
             return False
         if getattr(ctx, "motion_state", "active") == "stationary":
             return self.hold_position(duration)
-        del duration
         unit_id = str(unit_config.get("unit_id", ""))
-        group_name = self._action_motion_groups.get(unit_id)
-        if group_name is None:
+        if unit_id not in self._stage_actions:
             logger.error(
-                "No navigation-stage motion group for %s/%s/%s",
+                "No navigation-stage action for %s/%s/%s",
                 behavior_name,
                 stage_id,
                 unit_id,
             )
             return False
-        return bool(self._motion_adapter.execute_group(group_name, ctx))
+        return bool(self._motion_adapter.execute_step(unit_config, ctx, duration))
 
     def hold_position(self, duration_sec: float | None = None) -> bool:
         """Keep the chassis stationary while retaining the semantic stage."""
@@ -357,13 +388,16 @@ class BehaviorMobilityAdapter:
 
     def cancel_step(self, step: Any = None) -> None:
         del step
-        cancel_navigation = getattr(
-            self._navigate_waypoint,
-            "cancel_navigation",
-            None,
-        )
-        if callable(cancel_navigation):
-            cancel_navigation()
+        navigators = [self._navigate_fixed_place, self._navigate_waypoint]
+        seen: set[int] = set()
+        for navigator in navigators:
+            owner = getattr(navigator, "__self__", navigator)
+            if owner is None or id(owner) in seen:
+                continue
+            seen.add(id(owner))
+            cancel_navigation = getattr(owner, "cancel_navigation", None)
+            if callable(cancel_navigation):
+                cancel_navigation()
         self._motion_adapter.cancel_step()
 
     def emergency_stop(self) -> None:
@@ -422,8 +456,24 @@ class Ros2Nav2Client:
         from action_msgs.msg import GoalStatus
 
         self._cancel_requested.clear()
+        try:
+            total_timeout = float(timeout_sec)
+        except (TypeError, ValueError):
+            total_timeout = 0.0
+        if not math.isfinite(total_timeout) or total_timeout <= 0.0:
+            self._node.get_logger().error(
+                f"Nav2 goal {waypoint_name} has no remaining time budget"
+            )
+            return False
+        deadline = time.monotonic() + total_timeout
+        server_wait = min(
+            self._server_timeout_sec,
+            max(0.0, deadline - time.monotonic()),
+        )
+        if server_wait <= 0.0:
+            return False
         if not self._client.wait_for_server(
-            timeout_sec=self._server_timeout_sec
+            timeout_sec=server_wait
         ):
             self._node.get_logger().error(
                 f"Nav2 server unavailable: {self._action_name}"
@@ -458,7 +508,11 @@ class Ros2Nav2Client:
         send_future.add_done_callback(
             self._cancel_late_goal_if_requested
         )
-        if not self._wait_future(send_future, self._server_timeout_sec):
+        acceptance_wait = min(
+            self._server_timeout_sec,
+            max(0.0, deadline - time.monotonic()),
+        )
+        if not self._wait_future(send_future, acceptance_wait):
             self._node.get_logger().error(
                 f"Nav2 goal {waypoint_name} was not accepted in time"
             )
@@ -481,11 +535,12 @@ class Ros2Nav2Client:
             self._active_goal_handle = goal_handle
 
         result_future = goal_handle.get_result_async()
-        if not self._wait_future(result_future, timeout_sec):
+        result_wait = max(0.0, deadline - time.monotonic())
+        if not self._wait_future(result_future, result_wait):
             self.cancel_navigation()
             self._node.get_logger().error(
                 f"Nav2 goal {waypoint_name} timed out after "
-                f"{timeout_sec:.1f}s"
+                f"{total_timeout:.1f}s total"
             )
             return False
 

@@ -1,190 +1,51 @@
 action_units:
-  ACT_LOWER_HEAD_AND_APPROACH_BOWL:
-    unit_id: ACT_LOWER_HEAD_AND_APPROACH_BOWL
+  ACT_RAISE_HEAD:
+    unit_id: ACT_RAISE_HEAD
     unit_type: atomic_action
-    timeout_sec: 5.0
+    # 上厕所的完成信号.  Protocol §1.2.3.1: 0x21010130 is the pitch axis and
+    # 取正值时低头, so raising the head is the *negative* mirror of the 低头
+    # proxies use.  Added 2026-09-18 at the product owner's request as an
+    # explicit "this behavior is done" marker.  Both magnitudes are 20000 since
+    # 2026-09-18: the pitch axis ignores |value| <= 6553, so the original 7500
+    # was 3.6% into the usable stroke and the gesture was invisible on the real
+    # dog.  The 2.5 s hold (1.5 s since 2026-09-18's first pass, lengthened
+    # again the same day) plus the in-place-mode switch and the settle wait come
+    # to ~5 s, and an entry-time posture recovery can add 2.2 s more, so the
+    # budget is 10 s rather than 6.
+    timeout_sec: 10.0
     interrupt_policy: safe_point
-  ACT_LICK_FOOD:
-    unit_id: ACT_LICK_FOOD
-    unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 6.0
-    interrupt_policy: non_interruptible
     from_postures:
     - standing
-    - sitting
-    to_posture: ''
-    conditions:
-      food_in_bowl: true
-      max_distance_m: 0.5
-    description: Extend tongue to lick food or water from the bowl repeatedly.
-  ACT_CHEW_OR_CARRY_FOOD:
-    unit_id: ACT_CHEW_OR_CARRY_FOOD
-    unit_type: composite_action
-    controller: mouth
-    timeout_sec: 8.0
-    interrupt_policy: non_interruptible
-    from_postures:
-    - standing
-    - sitting
     to_posture: standing
-    conditions:
-      food_acquired: true
-    description: Chew food thoroughly or pick up a large piece and carry it to a safe spot.
-  ACT_SCRATCH_FOOD:
-    unit_id: ACT_SCRATCH_FOOD
+  ACT_TWIST_WAIST_LEFT_RIGHT:
+    unit_id: ACT_TWIST_WAIST_LEFT_RIGHT
     unit_type: atomic_action
-    controller: paw
-    timeout_sec: 4.0
+    # 进食流程的收尾手势: 左右各扭一次腰.  Both halves are the same 偏航 proxy the
+    # 114-action family uses (0x21010135 = 10500, 真机上「明显扭转，幅度清晰」),
+    # but with opposite signs -- which is exactly why this is its own plan and
+    # not a member of that family: the family anchor is byte-identical and
+    # single-direction, and the loader forbids a variant.  1.6 s per side
+    # matches the family hold.  Budget: two in-place holds (3.2 s), two mode
+    # switches (0.2 s), one control period, the entry stand-up recovery a lying
+    # dog needs (2.2 s measured) and the settle wait come to ~6 s, so 8.
+    timeout_sec: 8.0
     interrupt_policy: safe_point
     from_postures:
     - standing
-    - sitting
-    to_posture: ''
-    conditions:
-      food_on_ground: true
-      max_distance_m: 1.0
-    description: Use front paws to scratch at food on the ground to break it apart.
-  ACT_PAUSE_AND_LOOK_AT_OWNER:
-    unit_id: ACT_PAUSE_AND_LOOK_AT_OWNER
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 5.0
-    interrupt_policy: safe_point
-    from_postures:
-    - standing
-    - sitting
-    - lying
-    to_posture: ''
-    conditions:
-      owner_visible: true
-    description: Pause current activity, lift head, and gaze at owner for approval or interaction.
-  ACT_CHANGE_POSTURE:
-    unit_id: ACT_CHANGE_POSTURE
-    unit_type: atomic_action
-    controller: posture
-    timeout_sec: 5.0
-    interrupt_policy: safe_point
-    from_postures:
-    - standing
-    - sitting
-    - lying
-    to_posture: ''
-    conditions: {}
-    description: Transition between postures (stand/sit/lie) as directed by the current stage.
-  ACT_BURP:
-    unit_id: ACT_BURP
-    unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 5.0
-    interrupt_policy: safe_point
-    from_postures:
-    - standing
-    - sitting
-    - lying
-    to_posture: ''
-    conditions: {}
-    description: Release a small burp after eating or drinking too quickly.
-  ACT_LICK_LIPS_OR_NOSE:
-    unit_id: ACT_LICK_LIPS_OR_NOSE
-    unit_type: atomic_action
-    controller: mouth
-    timeout_sec: 5.0
-    interrupt_policy: safe_point
-    from_postures:
-    - standing
-    - sitting
-    - lying
-    to_posture: ''
-    conditions: {}
-    description: Quickly lick lips or nose — a self-soothing or post-eating gesture.
-  ACT_SHAKE_HEAD:
-    unit_id: ACT_SHAKE_HEAD
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 5.0
-    interrupt_policy: safe_point
-    from_postures:
-    - standing
-    - sitting
-    - lying
-    to_posture: ''
-    conditions: {}
-    description: Shake head side-to-side rapidly, often after eating, drinking, or waking.
-  ACT_WALK_AWAY_OR_LIE_DOWN:
-    unit_id: ACT_WALK_AWAY_OR_LIE_DOWN
-    unit_type: composite_action
-    controller: motion
-    timeout_sec: 6.0
-    interrupt_policy: safe_point
-    from_postures:
-    - standing
-    - sitting
-    - lying
-    to_posture: lying
-    conditions: {}
-    description: Either walk away from the current spot or lie down — a post-eating wind-down choice.
-  ACT_SNIFF_GROUND_FOR_CRUMBS:
-    unit_id: ACT_SNIFF_GROUND_FOR_CRUMBS
-    unit_type: atomic_action
-    controller: head
-    timeout_sec: 5.0
-    interrupt_policy: safe_point
-    from_postures:
-    - standing
-    to_posture: ''
-    conditions:
-      max_distance_m: 2.0
-    description: Lower nose to the ground and sniff systematically for dropped food crumbs.
-  ACT_CARRY_BOWL_AND_FOLLOW_OWNER:
-    unit_id: ACT_CARRY_BOWL_AND_FOLLOW_OWNER
-    unit_type: atomic_action
-    timeout_sec: 5.0
-    interrupt_policy: safe_point
-  ACT_PAW_AT_BOWL_FOR_FOOD:
-    unit_id: ACT_PAW_AT_BOWL_FOR_FOOD
-    unit_type: atomic_action
-    timeout_sec: 5.0
-    interrupt_policy: safe_point
+    to_posture: standing
   ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD:
     unit_id: ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD
-    unit_type: atomic_action
-    timeout_sec: 5.0
-    interrupt_policy: safe_point
-  ACT_LICK_AND_SWALLOW:
-    unit_id: ACT_LICK_AND_SWALLOW
-    unit_type: atomic_action
-    timeout_sec: 5.0
-    interrupt_policy: safe_point
-  ACT_SNIFF_GROUND_FOR_CRUMBS_AND_LEAVE:
-    unit_id: ACT_SNIFF_GROUND_FOR_CRUMBS_AND_LEAVE
-    unit_type: atomic_action
-    timeout_sec: 5.0
-    interrupt_policy: safe_point
-  ACT_LICK_LIPS_OR_NOSE_AND_LEAVE:
-    unit_id: ACT_LICK_LIPS_OR_NOSE_AND_LEAVE
-    unit_type: atomic_action
-    timeout_sec: 5.0
-    interrupt_policy: safe_point
-  ACT_PAW_AT_BOWL_AND_WAIT_FOR_FOOD:
-    unit_id: ACT_PAW_AT_BOWL_AND_WAIT_FOR_FOOD
-    unit_type: atomic_action
-    timeout_sec: 5.0
-    interrupt_policy: safe_point
-  ACT_SNIFF_BOWL_RIM_AND_WAIT_FOR_FOOD:
-    unit_id: ACT_SNIFF_BOWL_RIM_AND_WAIT_FOR_FOOD
-    unit_type: atomic_action
-    timeout_sec: 5.0
-    interrupt_policy: safe_point
-  ACT_WHINE_AND_WAIT_FOR_FOOD:
-    unit_id: ACT_WHINE_AND_WAIT_FOR_FOOD
     unit_type: atomic_action
     timeout_sec: 5.0
     interrupt_policy: safe_point
   ACT_SNIFF_AND_CIRCLE_AT_TOILET_SPOT:
     unit_id: ACT_SNIFF_AND_CIRCLE_AT_TOILET_SPOT
     unit_type: atomic_action
-    timeout_sec: 6.0
+    # 3 laps of the 0.2 m-radius orbit at 1.20 rad/s: 3*2*pi/1.20 = 15.7 s, plus
+    # the entry checks, the mode switch and the settle after it.  This is the
+    # outer cap, and the backend's twist step is clamped to it, so anything
+    # below the orbit duration leaves the dog part-way round the third lap.
+    timeout_sec: 60.0
     interrupt_policy: safe_point
   ACT_SQUAT_AND_ELIMINATE:
     unit_id: ACT_SQUAT_AND_ELIMINATE
@@ -195,7 +56,7 @@ action_units:
     unit_id: ACT_SCRATCH_SOIL_OR_GROUND
     unit_type: atomic_action
     controller: paw
-    timeout_sec: 4.0
+    timeout_sec: 5.0
     interrupt_policy: safe_point
     from_postures:
     - standing
@@ -270,7 +131,13 @@ action_units:
     unit_id: ACT_CIRCLE_AROUND
     unit_type: composite_action
     controller: motion
-    timeout_sec: 6.0
+    # 6.3 s of open-loop turn at 1.0 rad/s, plus the vision-mode switch and the
+    # settle that follows it.  This is the outer cap: the backend's twist step
+    # gets min(this, the goal budget), so anything near 6.3 s would clip the
+    # turn short of a full circle.  Left at 20.0 when the turn was sped up on
+    # 2026-09-20: the cap only has to stay above the turn, and tightening it
+    # would start clipping the switch/settle overhead instead.
+    timeout_sec: 20.0
     interrupt_policy: safe_point
     from_postures:
     - standing
@@ -530,7 +397,7 @@ action_units:
     unit_id: ACT_SNIFF_FACE_OR_EARS
     unit_type: atomic_action
     controller: head
-    timeout_sec: 4.0
+    timeout_sec: 5.0
     interrupt_policy: safe_point
     from_postures:
     - standing
@@ -581,7 +448,7 @@ action_units:
     unit_id: ACT_LOWER_HEAD_FLOP_EARS_WAG_TAIL
     unit_type: composite_action
     controller: head
-    timeout_sec: 4.0
+    timeout_sec: 6.0
     interrupt_policy: safe_point
     from_postures:
     - standing
@@ -660,7 +527,7 @@ action_units:
     unit_id: ACT_PAW_AT_OWNER
     unit_type: atomic_action
     controller: paw
-    timeout_sec: 5.0
+    timeout_sec: 25.0
     interrupt_policy: safe_point
     from_postures:
     - standing
@@ -747,7 +614,7 @@ action_units:
   ACT_WHINE_OR_VOCALIZE_SOFTLY:
     unit_id: ACT_WHINE_OR_VOCALIZE_SOFTLY
     unit_type: atomic_action
-    timeout_sec: 5.0
+    timeout_sec: 25.0
     interrupt_policy: safe_point
   ACT_NUDGE_OR_RUB_AGAINST_OWNER_HAND:
     unit_id: ACT_NUDGE_OR_RUB_AGAINST_OWNER_HAND
@@ -798,7 +665,7 @@ action_units:
     unit_id: ACT_STAND_AND_SCRATCH_HIGH
     unit_type: atomic_action
     controller: paw
-    timeout_sec: 4.0
+    timeout_sec: 5.0
     interrupt_policy: safe_point
     from_postures:
     - standing
@@ -821,7 +688,7 @@ action_units:
     unit_id: ACT_SNIFF_OBJECT
     unit_type: atomic_action
     controller: head
-    timeout_sec: 4.0
+    timeout_sec: 5.0
     interrupt_policy: safe_point
     from_postures:
     - standing
@@ -835,7 +702,7 @@ action_units:
     unit_id: ACT_PUSH_OBJECT_WITH_PAW
     unit_type: atomic_action
     controller: paw
-    timeout_sec: 3.0
+    timeout_sec: 5.0
     interrupt_policy: safe_point
     from_postures:
     - standing
@@ -849,7 +716,7 @@ action_units:
     unit_id: ACT_SCRATCH_OBJECT_GENTLY
     unit_type: atomic_action
     controller: paw
-    timeout_sec: 3.0
+    timeout_sec: 5.0
     interrupt_policy: safe_point
     from_postures:
     - standing
@@ -902,7 +769,7 @@ action_units:
     unit_id: ACT_BARK_AT_OBJECT
     unit_type: atomic_action
     controller: vocal
-    timeout_sec: 3.0
+    timeout_sec: 5.0
     interrupt_policy: safe_point
     from_postures:
     - standing
@@ -929,7 +796,7 @@ action_units:
     unit_id: ACT_NIBBLE_OBJECT
     unit_type: atomic_action
     controller: mouth
-    timeout_sec: 4.0
+    timeout_sec: 5.0
     interrupt_policy: safe_point
     from_postures:
     - standing
@@ -1000,7 +867,7 @@ action_units:
     unit_id: ACT_SNIFF_TRASH_CAN
     unit_type: atomic_action
     controller: head
-    timeout_sec: 3.0
+    timeout_sec: 5.0
     interrupt_policy: safe_point
     from_postures:
     - standing
@@ -1024,7 +891,7 @@ action_units:
     unit_id: ACT_SNIFF_DELIVERY_BOX
     unit_type: atomic_action
     controller: head
-    timeout_sec: 4.0
+    timeout_sec: 5.0
     interrupt_policy: safe_point
     from_postures:
     - standing
@@ -1037,7 +904,7 @@ action_units:
     unit_id: ACT_BITE_DELIVERY_BOX
     unit_type: atomic_action
     controller: mouth
-    timeout_sec: 4.0
+    timeout_sec: 5.0
     interrupt_policy: safe_point
     from_postures:
     - standing
@@ -1064,7 +931,7 @@ action_units:
     unit_id: ACT_SCRATCH_DELIVERY_BOX_WITH_PAW
     unit_type: atomic_action
     controller: paw
-    timeout_sec: 3.0
+    timeout_sec: 5.0
     interrupt_policy: safe_point
     from_postures:
     - standing
@@ -1140,7 +1007,7 @@ action_units:
     unit_id: ACT_LEAN_AGAINST_DOOR
     unit_type: atomic_action
     controller: motion
-    timeout_sec: 4.0
+    timeout_sec: 5.0
     interrupt_policy: safe_point
     from_postures:
     - standing
@@ -1167,7 +1034,7 @@ action_units:
     unit_id: ACT_SCRATCH_DOOR
     unit_type: atomic_action
     controller: paw
-    timeout_sec: 4.0
+    timeout_sec: 5.0
     interrupt_policy: safe_point
     from_postures:
     - standing
@@ -1180,7 +1047,7 @@ action_units:
     unit_id: ACT_SNIFF_AROUND_DOOR
     unit_type: atomic_action
     controller: head
-    timeout_sec: 4.0
+    timeout_sec: 5.0
     interrupt_policy: safe_point
     from_postures:
     - standing
@@ -1189,27 +1056,6 @@ action_units:
       door_nearby: true
       max_distance_m: 0.3
     description: Sniff the edges, gap, and threshold of a door — checking for scents from the other side.
-  ACT_VISUALLY_TRACK_FOOD_IN_HAND:
-    unit_id: ACT_VISUALLY_TRACK_FOOD_IN_HAND
-    unit_type: atomic_action
-    timeout_sec: 5.0
-    interrupt_policy: safe_point
-  ACT_CIRCLE_AROUND_OWNER:
-    unit_id: ACT_CIRCLE_AROUND_OWNER
-    unit_type: atomic_action
-    timeout_sec: 6.0
-    interrupt_policy: safe_point
-  ACT_STAND_UP_AND_PAW_AT_OWNER_LEG:
-    unit_id: ACT_STAND_UP_AND_PAW_AT_OWNER_LEG
-    unit_type: atomic_action
-    timeout_sec: 5.0
-    interrupt_policy: safe_point
-    to_posture: standing
-  ACT_SPIN_IN_PLACE:
-    unit_id: ACT_SPIN_IN_PLACE
-    unit_type: atomic_action
-    timeout_sec: 6.0
-    interrupt_policy: safe_point
   ACT_CHECK_OWNER:
     unit_id: ACT_CHECK_OWNER
     unit_type: atomic_action
@@ -1293,7 +1139,7 @@ action_units:
     unit_id: ACT_WAG_TAIL
     unit_type: atomic_action
     controller: tail
-    timeout_sec: 3.0
+    timeout_sec: 5.0
     interrupt_policy: safe_point
     from_postures:
     - lying
@@ -1462,8 +1308,71 @@ action_units:
   ACT_INTERACT_RESPOND_CALL:
     unit_id: ACT_INTERACT_RESPOND_CALL
     unit_type: atomic_action
-    timeout_sec: 5.0
+    timeout_sec: 35.0
     interrupt_policy: safe_point
+    requires_controller: true
+    description: Orient to the calibrated linear-array heading, confirm a fresh visual human, and check the mirrored rear heading when needed.
+  ACT_INTERACT_APPROACH_VOICE_CALLER:
+    unit_id: ACT_INTERACT_APPROACH_VOICE_CALLER
+    unit_type: task
+    timeout_sec: 160.0
+    interrupt_policy: immediate
+    requires_controller: true
+    conditions: {}
+    description: Locate the locked voice caller once through Vision and SLAM, then navigate once with Nav2 when required; cancel waits for the inner Nav2 Result.
+  ACT_APPROACH_VISUAL_TARGET:
+    unit_id: ACT_APPROACH_VISUAL_TARGET
+    unit_type: task
+    timeout_sec: 20.0
+    interrupt_policy: immediate
+    requires_controller: true
+    conditions: {}
+    description: Bind the Tree-selected human, animal, or object to one live visual track, approach with the configured range mode, and stop before the behavior expression; never mock-success when the controller is unavailable.
+  ACT_OWNER_UNHAPPY:
+    unit_id: ACT_OWNER_UNHAPPY
+    unit_type: atomic_action
+    timeout_sec: 6.0
+    interrupt_policy: immediate
+    requires_controller: true
+    conditions: {}
+    description: After visually approaching the owner slowly, use a restrained low-body companionship proxy and remain quietly beside the owner.
+  ACT_EXPRESS_MISS_YOU:
+    unit_id: ACT_EXPRESS_MISS_YOU
+    unit_type: atomic_action
+    # 4.0 -> 5.0 on 2026-09-18 with the 2.0 s 低头 hold.  This action is the one
+    # member of the pitch family that carried its own timeout below the rest:
+    # 2.0 s hold + 0.25 s of mode switches and control period + the 2.2 s entry
+    # stand-up recovery a lying dog needs = 4.45 s, so at 4.0 the recovery would
+    # have eaten the gesture it was making possible.
+    timeout_sec: 5.0
+    interrupt_policy: immediate
+    requires_controller: true
+    conditions: {}
+    description: After visually approaching the owner, perform a fast wagging and gentle nuzzling chassis proxy without advancing inside the protected distance.
+  ACT_OWNER_GOING_OUT:
+    unit_id: ACT_OWNER_GOING_OUT
+    unit_type: atomic_action
+    timeout_sec: 2.0
+    interrupt_policy: immediate
+    requires_controller: true
+    conditions: {}
+    description: Finish the visual attention and short follow window with a brief attentive farewell proxy while stopped near the owner.
+  ACT_PERCEPTION_RESPOND_PERSON_FALL:
+    unit_id: ACT_PERCEPTION_RESPOND_PERSON_FALL
+    unit_type: atomic_action
+    timeout_sec: 1.0
+    interrupt_policy: immediate
+    requires_controller: true
+    conditions: {}
+    description: Stop the selected chassis immediately after a confirmed person-fall event.
+  ACT_PERCEPTION_RESPOND_STOP_GESTURE:
+    unit_id: ACT_PERCEPTION_RESPOND_STOP_GESTURE
+    unit_type: atomic_action
+    timeout_sec: 1.0
+    interrupt_policy: immediate
+    requires_controller: true
+    conditions: {}
+    description: Stop the selected chassis immediately after a confirmed STOP gesture.
   ACT_BASIC_SIT:
     unit_id: ACT_BASIC_SIT
     unit_type: atomic_action
@@ -1482,6 +1391,64 @@ action_units:
     timeout_sec: 5.0
     interrupt_policy: safe_point
     to_posture: standing
+  ACT_NAV_WALK_RANDOM:
+    unit_id: ACT_NAV_WALK_RANDOM
+    unit_type: atomic_action
+    timeout_sec: 1.0
+    interrupt_policy: immediate
+    requires_controller: true
+    description: Confirm the completed Nav2 move to a random navigable point.
+  ACT_NAV_GO_OUT_TO_PLAY:
+    unit_id: ACT_NAV_GO_OUT_TO_PLAY
+    unit_type: atomic_action
+    timeout_sec: 1.0
+    interrupt_policy: immediate
+    requires_controller: true
+    description: Confirm the completed Nav2 move into the configured play region.
+  ACT_NAV_GO_HOME:
+    unit_id: ACT_NAV_GO_HOME
+    unit_type: atomic_action
+    timeout_sec: 1.0
+    interrupt_policy: immediate
+    requires_controller: true
+    description: Confirm arrival at the configured home waypoint.
+  ACT_INTERACT_APPROACH_OWNER_CLOSER:
+    unit_id: ACT_INTERACT_APPROACH_OWNER_CLOSER
+    unit_type: task
+    timeout_sec: 160.0
+    interrupt_policy: immediate
+    requires_controller: true
+    description: Bind a fresh human track, locate once, and navigate to a safe stand-off distance with Nav2.
+  ACT_BASIC_BACK_UP:
+    unit_id: ACT_BASIC_BACK_UP
+    unit_type: atomic_action
+    timeout_sec: 4.0
+    interrupt_policy: immediate
+    requires_controller: true
+    description: Move backward from the current position and stop.
+  ACT_CONTROL_HOLD_STANDING:
+    unit_id: ACT_CONTROL_HOLD_STANDING
+    unit_type: atomic_action
+    timeout_sec: 4.0
+    interrupt_policy: immediate
+    requires_controller: true
+    to_posture: standing
+    description: Keep the standing posture while commanding zero chassis motion.
+  ACT_CONTROL_HOLD_POSITION:
+    unit_id: ACT_CONTROL_HOLD_POSITION
+    unit_type: atomic_action
+    timeout_sec: 6.0
+    interrupt_policy: immediate
+    requires_controller: true
+    description: Preserve the current posture while commanding zero chassis motion.
+  ACT_CONTROL_QUIET:
+    unit_id: ACT_CONTROL_QUIET
+    unit_type: policy
+    timeout_sec: 1.0
+    interrupt_policy: immediate
+    effect:
+      complete_stage_without_motion: true
+    description: Stop current behavior audio without changing posture or chassis state.
   ACT_BASIC_WAIT:
     unit_id: ACT_BASIC_WAIT
     unit_type: atomic_action
@@ -1489,23 +1456,32 @@ action_units:
     interrupt_policy: safe_point
   ACT_INTERACT_APPROACH_OWNER:
     unit_id: ACT_INTERACT_APPROACH_OWNER
-    unit_type: atomic_action
-    timeout_sec: 5.0
-    interrupt_policy: safe_point
+    unit_type: task
+    timeout_sec: 160.0
+    interrupt_policy: immediate
+    requires_controller: true
+    description: Bind a fresh human track, locate once, and navigate with Nav2.
   ACT_INTERACT_FOLLOW_OWNER:
     unit_id: ACT_INTERACT_FOLLOW_OWNER
     unit_type: atomic_action
-    timeout_sec: 5.0
-    interrupt_policy: safe_point
+    # Used only by bounded legacy Goals. A timeout_sec=0 follow_owner Goal
+    # runs until cancellation; controller health checks remain finite.
+    timeout_sec: 15.0
+    interrupt_policy: immediate
+    requires_controller: true
   ACT_INTERACT_GIVE_PAW:
     unit_id: ACT_INTERACT_GIVE_PAW
     unit_type: atomic_action
-    timeout_sec: 5.0
+    # Outer cap for both branches of this plan: the backend waits
+    # min(this, the step's completion_timeout_sec).  Measured on the real dog
+    # (2026-09-18): the hello branch takes ~8.2 s and the twist-body branch
+    # ~20 s, so this has to clear the slower one.
+    timeout_sec: 25.0
     interrupt_policy: safe_point
   ACT_INTERACT_HIGH_FIVE:
     unit_id: ACT_INTERACT_HIGH_FIVE
     unit_type: atomic_action
-    timeout_sec: 5.0
+    timeout_sec: 25.0
     interrupt_policy: safe_point
   ACT_TRICK_ROLL_OVER:
     unit_id: ACT_TRICK_ROLL_OVER
@@ -1519,14 +1495,17 @@ action_units:
     interrupt_policy: non_interruptible
   ACT_INTERACT_RETURN_OWNER:
     unit_id: ACT_INTERACT_RETURN_OWNER
-    unit_type: atomic_action
-    timeout_sec: 5.0
-    interrupt_policy: safe_point
+    unit_type: task
+    timeout_sec: 160.0
+    interrupt_policy: immediate
+    requires_controller: true
+    description: Bind a fresh human track, locate once, and return with Nav2.
   ACT_OBJECT_DROP:
     unit_id: ACT_OBJECT_DROP
     unit_type: atomic_action
     timeout_sec: 5.0
     interrupt_policy: safe_point
+    requires_controller: true
   ACT_TRICK_PLAY_DEAD:
     unit_id: ACT_TRICK_PLAY_DEAD
     unit_type: atomic_action
@@ -1538,13 +1517,21 @@ action_units:
     unit_type: atomic_action
     timeout_sec: 5.0
     interrupt_policy: safe_point
+    requires_controller: true
   ACT_OBJECT_FETCH:
     unit_id: ACT_OBJECT_FETCH
     unit_type: atomic_action
     timeout_sec: 5.0
     interrupt_policy: safe_point
+    requires_controller: true
   ACT_SYSTEM_EMERGENCY_STOP:
     unit_id: ACT_SYSTEM_EMERGENCY_STOP
     unit_type: atomic_action
     timeout_sec: 0.0
     interrupt_policy: immediate
+  ACT_UWB_RANDOM_ROAM:
+    unit_id: ACT_UWB_RANDOM_ROAM
+    unit_type: atomic_action
+    timeout_sec: 40.0
+    interrupt_policy: immediate
+    requires_controller: true

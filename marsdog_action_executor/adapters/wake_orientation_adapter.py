@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class WakeOrientationAdapter:
-    """Turn the chassis toward ``wake_angle_deg`` from ``base_link``."""
+    """Calibrate a raw microphone-array angle into base-relative yaw."""
 
     ACTION_ID = "ACT_INTERACT_RESPOND_CALL"
 
@@ -25,12 +25,19 @@ class WakeOrientationAdapter:
         self,
         spin_relative: Callable[[float, float, float], bool],
         *,
-        angle_zero_offset_deg: float = 0.0,
-        angle_direction_sign: float = 1.0,
+        angle_zero_offset_deg: float = 90.0,
+        angle_direction_sign: float = -1.0,
         angle_deadband_deg: float = 5.0,
-        required_frame_id: str = "base_link",
+        required_frame_id: str = "microphone_array",
         result_timeout_sec: float = 15.0,
         time_allowance_sec: float = 12.0,
+        linear_array_back_search_enabled: bool = False,
+        visual_confirm_timeout_sec: float = 1.5,
+        visual_min_confidence: float = 0.6,
+        visual_max_age_ms: float = 800.0,
+        should_stop: Callable[[], bool] | None = None,
+        prepare_motion: Callable[[], bool] | None = None,
+        finish_motion: Callable[[], Any] | None = None,
     ) -> None:
         self._spin_relative = spin_relative
         self._angle_zero_offset_deg = self._finite_float(
@@ -61,6 +68,33 @@ class WakeOrientationAdapter:
             time_allowance_sec,
             "time_allowance_sec",
         )
+        self._linear_array_back_search_enabled = bool(
+            linear_array_back_search_enabled
+        )
+        self._visual_confirm_timeout_sec = self._positive_float(
+            visual_confirm_timeout_sec,
+            "visual_confirm_timeout_sec",
+        )
+        self._visual_min_confidence = min(
+            1.0,
+            max(
+                0.0,
+                self._finite_float(
+                    visual_min_confidence,
+                    "visual_min_confidence",
+                ),
+            ),
+        )
+        self._visual_max_age_ms = self._positive_float(
+            visual_max_age_ms,
+            "visual_max_age_ms",
+        )
+        self._should_stop = should_stop or (lambda: False)
+        self._prepare_motion = prepare_motion
+        self._finish_motion = finish_motion
+        self._cancel_requested = threading.Event()
+        self._visual_condition = threading.Condition()
+        self._human_revision = 0
 
     def execute_step(
         self,
@@ -69,11 +103,24 @@ class WakeOrientationAdapter:
         duration: float | None = None,
     ) -> bool:
         """Validate and convert a wake angle, then invoke Nav2 Spin."""
-        del duration
         unit_id = str(unit_config.get("unit_id", ""))
         if unit_id != self.ACTION_ID:
             logger.error("Wake orientation cannot execute action %s", unit_id)
             return False
+
+        step_deadline: float | None = None
+        if duration is not None:
+            try:
+                step_budget = float(duration)
+            except (TypeError, ValueError):
+                logger.error("Invalid wake orientation duration=%r", duration)
+                return False
+            if not math.isfinite(step_budget) or step_budget <= 0.0:
+                logger.error("Wake orientation budget is exhausted")
+                return False
+            step_deadline = time.monotonic() + step_budget
+
+        self._cancel_requested.clear()
 
         if not bool(getattr(ctx, "use_wake_angle", False)):
             logger.error(
@@ -111,7 +158,8 @@ class WakeOrientationAdapter:
             raw_angle_deg - self._angle_zero_offset_deg
         )
         relative_deg = self._normalise_degrees(calibrated_deg)
-        if abs(relative_deg) <= self._angle_deadband_deg:
+        within_deadband = abs(relative_deg) <= self._angle_deadband_deg
+        if within_deadband:
             logger.info(
                 "Wake source already ahead: raw=%.2fdeg, "
                 "calibrated=%.2fdeg, deadband=%.2fdeg",
@@ -119,33 +167,209 @@ class WakeOrientationAdapter:
                 relative_deg,
                 self._angle_deadband_deg,
             )
+        else:
+            logger.info(
+                "Orienting to wake source: raw=%.2fdeg, calibrated=%.2fdeg, "
+                "target_yaw=%.4frad, frame=%s",
+                raw_angle_deg,
+                relative_deg,
+                math.radians(relative_deg),
+                frame_id,
+            )
+        if within_deadband and not self._linear_array_back_search_enabled:
             return True
 
-        target_yaw_rad = math.radians(relative_deg)
-        logger.info(
-            "Orienting to wake source: raw=%.2fdeg, calibrated=%.2fdeg, "
-            "target_yaw=%.4frad, frame=%s",
-            raw_angle_deg,
-            relative_deg,
-            target_yaw_rad,
-            frame_id,
-        )
-        return bool(
-            self._spin_relative(
-                target_yaw_rad,
-                self._result_timeout_sec,
-                self._time_allowance_sec,
+        # Nav2 turns the dog through the ordinary /cmd_vel topic, so from here
+        # on an external publisher owns the chassis.  On Lite3 that only works
+        # once the backend hands control over (Vision Mode); without this hook
+        # the Spin goal is accepted and streamed at full speed while the dog,
+        # still on the joystick, drops every sample and the unit dies on
+        # behavior_goal_timeout.  Measured on hardware 2026-09-20: /cmd_vel
+        # carried a constant -0.6 rad/s for the whole 8 s window while
+        # /leg_odom2 yaw never moved and /robot_status motion_state stayed 0.
+        # Same injection contract as navigation_adapter and the UWB follow
+        # adapter.
+        prepare = self._prepare_motion
+        if callable(prepare) and not bool(prepare()):
+            logger.error("Chassis rejected wake-orientation motion preflight")
+            return False
+        try:
+            return self._orient_and_search(
+                relative_deg,
+                within_deadband,
+                step_deadline,
             )
+        finally:
+            finish = self._finish_motion
+            if callable(finish):
+                finish()
+
+    def _orient_and_search(
+        self,
+        relative_deg: float,
+        within_deadband: bool,
+        step_deadline: float | None,
+    ) -> bool:
+        """Turn to the calibrated heading while the chassis hook is held."""
+        # Snapshot before the turn: the visual confirmation is about a human
+        # that becomes trackable *after* the dog has moved, so a fresh
+        # update_visual arriving during the Spin must count as new.
+        human_revision = self._current_human_revision()
+        if not within_deadband:
+            if not self._spin_with_deadline(
+                math.radians(relative_deg),
+                step_deadline,
+            ):
+                return False
+
+        if not self._linear_array_back_search_enabled:
+            return True
+        if self._wait_for_fresh_human(
+            human_revision,
+            self._remaining_step_sec(step_deadline),
+        ):
+            logger.info("Wake orientation confirmed a fresh visual human")
+            return True
+        if self._stopping() or self._deadline_expired(step_deadline):
+            return False
+
+        rear_deg = self._mirrored_rear_degrees(relative_deg)
+        rear_delta_deg = self._normalise_degrees(rear_deg - relative_deg)
+        if abs(rear_delta_deg) <= self._angle_deadband_deg:
+            logger.info(
+                "Linear-array rear candidate overlaps the first heading: "
+                "front=%.2fdeg rear=%.2fdeg",
+                relative_deg,
+                rear_deg,
+            )
+            return True
+
+        logger.info(
+            "No visual human at first wake heading; checking mirrored rear "
+            "candidate: first=%.2fdeg rear=%.2fdeg delta=%.2fdeg",
+            relative_deg,
+            rear_deg,
+            rear_delta_deg,
         )
+        human_revision = self._current_human_revision()
+        if not self._spin_with_deadline(
+            math.radians(rear_delta_deg),
+            step_deadline,
+        ):
+            return False
+        if self._wait_for_fresh_human(
+            human_revision,
+            self._remaining_step_sec(step_deadline),
+        ):
+            logger.info("Wake rear search confirmed a fresh visual human")
+        else:
+            logger.info("Wake rear search completed without a visual human")
+        return not (
+            self._stopping() or self._deadline_expired(step_deadline)
+        )
+
+    def update_visual(self, payload: Mapping[str, Any]) -> None:
+        """Record a fresh, trackable human without selecting or locking it."""
+        target = payload.get("active_target")
+        if not isinstance(target, Mapping):
+            return
+        try:
+            confidence = float(target.get("confidence", 0.0))
+            age_ms = float(target.get("last_seen_age_ms", float("inf")))
+        except (TypeError, ValueError):
+            return
+        if (
+            not math.isfinite(confidence)
+            or not math.isfinite(age_ms)
+            or str(target.get("target_type", "")) != "human"
+            or confidence < self._visual_min_confidence
+            or not 0.0 <= age_ms <= self._visual_max_age_ms
+            or str(target.get("tracking_state", "")) != "tracking"
+        ):
+            return
+        with self._visual_condition:
+            self._human_revision += 1
+            self._visual_condition.notify_all()
 
     def cancel_step(self, step: Any = None) -> None:
         del step
+        self._cancel_requested.set()
+        with self._visual_condition:
+            self._visual_condition.notify_all()
         cancel_spin = getattr(self._spin_relative, "cancel_spin", None)
         if callable(cancel_spin):
             cancel_spin()
 
     def emergency_stop(self) -> None:
         self.cancel_step()
+
+    def _current_human_revision(self) -> int:
+        with self._visual_condition:
+            return self._human_revision
+
+    def _wait_for_fresh_human(
+        self,
+        after_revision: int,
+        remaining_step_sec: float | None = None,
+    ) -> bool:
+        timeout = self._visual_confirm_timeout_sec
+        if remaining_step_sec is not None:
+            timeout = min(timeout, remaining_step_sec)
+        if timeout <= 0.0:
+            return False
+        deadline = time.monotonic() + timeout
+        with self._visual_condition:
+            while self._human_revision <= after_revision:
+                if self._stopping():
+                    return False
+                remaining = deadline - time.monotonic()
+                if remaining <= 0.0:
+                    return False
+                self._visual_condition.wait(timeout=min(0.05, remaining))
+            return True
+
+    def _spin_with_deadline(
+        self,
+        target_yaw_rad: float,
+        step_deadline: float | None,
+    ) -> bool:
+        remaining = self._remaining_step_sec(step_deadline)
+        if remaining is not None and remaining <= 0.0:
+            return False
+        result_timeout = self._result_timeout_sec
+        time_allowance = self._time_allowance_sec
+        if remaining is not None:
+            result_timeout = min(result_timeout, remaining)
+            time_allowance = min(time_allowance, remaining)
+        succeeded = bool(
+            self._spin_relative(
+                target_yaw_rad,
+                result_timeout,
+                time_allowance,
+            )
+        )
+        return succeeded and not self._deadline_expired(step_deadline)
+
+    @staticmethod
+    def _remaining_step_sec(step_deadline: float | None) -> float | None:
+        if step_deadline is None:
+            return None
+        return max(0.0, step_deadline - time.monotonic())
+
+    @classmethod
+    def _deadline_expired(cls, step_deadline: float | None) -> bool:
+        remaining = cls._remaining_step_sec(step_deadline)
+        return remaining is not None and remaining <= 0.0
+
+    def _stopping(self) -> bool:
+        return self._cancel_requested.is_set() or bool(self._should_stop())
+
+    @classmethod
+    def _mirrored_rear_degrees(cls, front_deg: float) -> float:
+        if abs(front_deg) < 1e-9:
+            return -180.0
+        rear = math.copysign(180.0 - abs(front_deg), front_deg)
+        return cls._normalise_degrees(rear)
 
     @staticmethod
     def _normalise_degrees(value: float) -> float:
@@ -215,8 +439,24 @@ class Ros2Nav2SpinClient:
         from action_msgs.msg import GoalStatus
 
         self._cancel_requested.clear()
+        try:
+            total_timeout = float(result_timeout_sec)
+        except (TypeError, ValueError):
+            total_timeout = 0.0
+        if not math.isfinite(total_timeout) or total_timeout <= 0.0:
+            self._node.get_logger().error(
+                "Nav2 Spin has no remaining time budget"
+            )
+            return False
+        deadline = time.monotonic() + total_timeout
+        server_wait = min(
+            self._server_timeout_sec,
+            max(0.0, deadline - time.monotonic()),
+        )
+        if server_wait <= 0.0:
+            return False
         if not self._client.wait_for_server(
-            timeout_sec=self._server_timeout_sec
+            timeout_sec=server_wait
         ):
             self._node.get_logger().error(
                 f"Nav2 Spin server unavailable: {self._action_name}"
@@ -225,16 +465,32 @@ class Ros2Nav2SpinClient:
 
         goal = self._action_type.Goal()
         goal.target_yaw = float(target_yaw_rad)
-        whole_seconds = int(time_allowance_sec)
+        try:
+            requested_allowance = float(time_allowance_sec)
+        except (TypeError, ValueError):
+            requested_allowance = 0.0
+        if (
+            not math.isfinite(requested_allowance)
+            or requested_allowance <= 0.0
+        ):
+            self._node.get_logger().error(
+                "Nav2 Spin time allowance must be finite and positive"
+            )
+            return False
+        remaining = max(0.0, deadline - time.monotonic())
+        effective_time_allowance = min(requested_allowance, remaining)
+        if effective_time_allowance <= 0.0:
+            return False
+        whole_seconds = int(effective_time_allowance)
         goal.time_allowance.sec = whole_seconds
         goal.time_allowance.nanosec = int(
-            (float(time_allowance_sec) - whole_seconds) * 1_000_000_000
+            (effective_time_allowance - whole_seconds) * 1_000_000_000
         )
 
         self._node.get_logger().info(
             f"Nav2 Spin goal: target_yaw={goal.target_yaw:.4f}rad "
             f"({math.degrees(goal.target_yaw):.2f}deg), "
-            f"time_allowance={time_allowance_sec:.1f}s"
+            f"time_allowance={effective_time_allowance:.1f}s"
         )
         send_future = self._client.send_goal_async(
             goal,
@@ -243,7 +499,11 @@ class Ros2Nav2SpinClient:
         send_future.add_done_callback(
             self._cancel_late_goal_if_requested
         )
-        if not self._wait_future(send_future, self._server_timeout_sec):
+        acceptance_wait = min(
+            self._server_timeout_sec,
+            max(0.0, deadline - time.monotonic()),
+        )
+        if not self._wait_future(send_future, acceptance_wait):
             self._node.get_logger().error(
                 "Nav2 Spin goal was not accepted in time"
             )
@@ -264,11 +524,12 @@ class Ros2Nav2SpinClient:
             self._active_goal_handle = goal_handle
 
         result_future = goal_handle.get_result_async()
-        if not self._wait_future(result_future, result_timeout_sec):
+        result_wait = max(0.0, deadline - time.monotonic())
+        if not self._wait_future(result_future, result_wait):
             self.cancel_spin()
             self._node.get_logger().error(
                 "Nav2 Spin timed out after "
-                f"{float(result_timeout_sec):.1f}s"
+                f"{total_timeout:.1f}s total"
             )
             return False
 

@@ -12,98 +12,181 @@ behaviors:
     behavior_name: eatNormally
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: prepare
+      # 到达食盆点位后的固定仪式 (2026-09-18 定版): 低头 → 抬头 → 趴下 → 站立 →
+      # 再低头 → 左右扭腰.  Every stage is a single-candidate random_one, so the
+      # order above is the order the operator sees, while the contract shape
+      # stays identical to every other behavior in this file.
+      - stage_id: lower_head
         order: 1
         selection_policy: random_one
         required: true
         candidates:
-          - {unit_id: ACT_LOWER_HEAD_AND_APPROACH_BOWL}
-      - stage_id: eating
+          - {unit_id: ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD}
+      - stage_id: head_up
         order: 2
         selection_policy: random_one
         required: true
         candidates:
-          - {unit_id: ACT_LICK_FOOD}
-          - {unit_id: ACT_CHEW_OR_CARRY_FOOD}
-          - {unit_id: ACT_SCRATCH_FOOD}
-      - stage_id: interaction
+          - {unit_id: ACT_RAISE_HEAD}
+      - stage_id: lie_down
         order: 3
         selection_policy: random_one
         required: true
         candidates:
-          - {unit_id: ACT_PAUSE_AND_LOOK_AT_OWNER}
-          - {unit_id: ACT_CHANGE_POSTURE}
-          - {unit_id: ACT_BURP}
-      - stage_id: exit
+          - {unit_id: ACT_BASIC_LIE_DOWN}
+      - stage_id: stand_up
         order: 4
         selection_policy: random_one
         required: true
         candidates:
-          - {unit_id: ACT_LICK_LIPS_OR_NOSE}
-          - {unit_id: ACT_SHAKE_HEAD}
-          - {unit_id: ACT_WALK_AWAY_OR_LIE_DOWN}
-          - {unit_id: ACT_SNIFF_GROUND_FOR_CRUMBS}
+          - {unit_id: ACT_BASIC_STAND}
+      - stage_id: lower_head_again
+        order: 5
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD}
+      - stage_id: waist_twist
+        order: 6
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_TWIST_WAIST_LEFT_RIGHT}
 
   seekFood:
     behavior_name: seekFood
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: seek_food
+      # 到达食盆点位后的固定仪式 (2026-09-18 定版): 低头 → 抬头 → 趴下 → 站立 →
+      # 再低头 → 左右扭腰, 与 eatNormally 完全一致.
+      - stage_id: lower_head
         order: 1
         selection_policy: random_one
         required: true
         candidates:
-          - {unit_id: ACT_CARRY_BOWL_AND_FOLLOW_OWNER}
-          - {unit_id: ACT_PAW_AT_BOWL_FOR_FOOD}
           - {unit_id: ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD}
+      - stage_id: head_up
+        order: 2
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_RAISE_HEAD}
+      - stage_id: lie_down
+        order: 3
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_BASIC_LIE_DOWN}
+      - stage_id: stand_up
+        order: 4
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_BASIC_STAND}
+      - stage_id: lower_head_again
+        order: 5
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD}
+      - stage_id: waist_twist
+        order: 6
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_TWIST_WAIST_LEFT_RIGHT}
 
   eatExcitedly:
     behavior_name: eatExcitedly
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: prepare
+      # 到达食盆点位后的固定仪式 (2026-09-18 定版): 低头 → 抬头 → 趴下 → 站立 →
+      # 再低头 → 左右扭腰, 与 eatNormally 完全一致.
+      - stage_id: lower_head
         order: 1
         selection_policy: random_one
         required: true
         candidates:
-          - {unit_id: ACT_LOWER_HEAD_AND_APPROACH_BOWL}
-      - stage_id: eating
+          - {unit_id: ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD}
+      - stage_id: head_up
         order: 2
         selection_policy: random_one
         required: true
         candidates:
-          - {unit_id: ACT_LICK_AND_SWALLOW}
-          - {unit_id: ACT_SCRATCH_FOOD}
-          - {unit_id: ACT_CHEW_OR_CARRY_FOOD}
-      - stage_id: exit
+          - {unit_id: ACT_RAISE_HEAD}
+      - stage_id: lie_down
         order: 3
         selection_policy: random_one
         required: true
         candidates:
-          - {unit_id: ACT_SNIFF_GROUND_FOR_CRUMBS_AND_LEAVE}
-          - {unit_id: ACT_WALK_AWAY_OR_LIE_DOWN}
-          - {unit_id: ACT_SHAKE_HEAD}
-          - {unit_id: ACT_LICK_LIPS_OR_NOSE_AND_LEAVE}
+          - {unit_id: ACT_BASIC_LIE_DOWN}
+      - stage_id: stand_up
+        order: 4
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_BASIC_STAND}
+      - stage_id: lower_head_again
+        order: 5
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD}
+      - stage_id: waist_twist
+        order: 6
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_TWIST_WAIST_LEFT_RIGHT}
 
   seekFoodUrgently:
     behavior_name: seekFoodUrgently
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: seek_food
+      # 到达食盆点位后的固定仪式 (2026-09-18 定版): 低头 → 抬头 → 趴下 → 站立 →
+      # 再低头 → 左右扭腰, 与 eatNormally 完全一致.
+      - stage_id: lower_head
         order: 1
         selection_policy: random_one
         required: true
         candidates:
-          - {unit_id: ACT_CARRY_BOWL_AND_FOLLOW_OWNER}
-          - {unit_id: ACT_PAW_AT_BOWL_AND_WAIT_FOR_FOOD}
-          - {unit_id: ACT_SNIFF_BOWL_RIM_AND_WAIT_FOR_FOOD}
-          - {unit_id: ACT_WHINE_AND_WAIT_FOR_FOOD}
+          - {unit_id: ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD}
+      - stage_id: head_up
+        order: 2
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_RAISE_HEAD}
+      - stage_id: lie_down
+        order: 3
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_BASIC_LIE_DOWN}
+      - stage_id: stand_up
+        order: 4
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_BASIC_STAND}
+      - stage_id: lower_head_again
+        order: 5
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD}
+      - stage_id: waist_twist
+        order: 6
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_TWIST_WAIST_LEFT_RIGHT}
 
   barkShortAlert:
     behavior_name: barkShortAlert
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: prepare
+      - stage_id: circle
         order: 1
         selection_policy: random_one
         required: true
@@ -123,6 +206,14 @@ behaviors:
           - {unit_id: ACT_SCRATCH_SOIL_OR_GROUND}
           - {unit_id: ACT_SNIFF_EXCREMENT}
           - {unit_id: ACT_WALK_AWAY_OR_SHAKE_HEAD}
+      # 抬头 as the completion marker: the dog is visibly done when it lifts its
+      # head, so this runs last and is not part of the random ``exit`` pick.
+      - stage_id: head_up
+        order: 4
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_RAISE_HEAD}
 
   lickPaws:
     behavior_name: lickPaws
@@ -143,19 +234,24 @@ behaviors:
     behavior_name: sleepOnSide
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: prepare
+      - stage_id: circle
         order: 1
         selection_policy: random_one
         required: true
         candidates:
           - {unit_id: ACT_CIRCLE_AROUND}
+      - stage_id: prepare
+        order: 2
+        selection_policy: random_one
+        required: true
+        candidates:
           - {unit_id: ACT_SCRATCH_BED_OR_GROUND}
           - {unit_id: ACT_STRETCH_BODY}
           - {unit_id: ACT_YAWN}
           - {unit_id: ACT_SPLoot_LIE_DOWN}
           - {unit_id: ACT_LICK_FUR_OR_PAWS}
       - stage_id: sleep_pose
-        order: 2
+        order: 3
         selection_policy: random_one
         required: true
         candidates:
@@ -163,7 +259,7 @@ behaviors:
           - {unit_id: ACT_SLEEP_ON_STOMACH}
           - {unit_id: ACT_SLEEP_ON_SIDE_CURLED_UP}
       - stage_id: sleeping
-        order: 3
+        order: 4
         motion_state: stationary
         selection_policy: random_one
         required: true
@@ -172,7 +268,7 @@ behaviors:
           - {unit_id: ACT_WHINE_SOFTLY}
           - {unit_id: ACT_TWITCH_OR_KICK_LEGS}
       - stage_id: wakeup
-        order: 4
+        order: 5
         selection_policy: random_one
         required: true
         candidates:
@@ -187,26 +283,31 @@ behaviors:
     behavior_name: sleepNow
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: prepare
+      - stage_id: circle
         order: 1
         selection_policy: random_one
         required: true
         candidates:
           - {unit_id: ACT_CIRCLE_AROUND}
+      - stage_id: prepare
+        order: 2
+        selection_policy: random_one
+        required: true
+        candidates:
           - {unit_id: ACT_SCRATCH_BED_OR_GROUND}
           - {unit_id: ACT_STRETCH_BODY}
           - {unit_id: ACT_YAWN}
           - {unit_id: ACT_SPLoot_LIE_DOWN}
           - {unit_id: ACT_LICK_FUR_OR_PAWS}
       - stage_id: sleep_pose
-        order: 2
+        order: 3
         selection_policy: random_one
         required: true
         candidates:
           - {unit_id: ACT_SLEEP_ON_SIDE}
           - {unit_id: ACT_SLEEP_ON_BACK}
       - stage_id: sleeping
-        order: 3
+        order: 4
         motion_state: stationary
         selection_policy: random_one
         required: true
@@ -215,7 +316,7 @@ behaviors:
           - {unit_id: ACT_WHINE_SOFTLY}
           - {unit_id: ACT_TWITCH_OR_KICK_LEGS}
       - stage_id: wakeup
-        order: 4
+        order: 5
         selection_policy: random_one
         required: true
         candidates:
@@ -251,8 +352,15 @@ behaviors:
     behavior_name: testAnimalBoundary
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: express
+      - stage_id: target_approach
         order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      - stage_id: express
+        order: 2
         selection_policy: random_one
         required: true
         candidates:
@@ -264,8 +372,15 @@ behaviors:
     behavior_name: greetAnimal
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: greet
+      - stage_id: target_approach
         order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      - stage_id: greet
+        order: 2
         selection_policy: random_one
         required: true
         candidates:
@@ -280,8 +395,15 @@ behaviors:
     behavior_name: inviteAnimalToPlay
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: invite
+      - stage_id: target_approach
         order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      - stage_id: invite
+        order: 2
         selection_policy: random_one
         required: true
         candidates:
@@ -296,8 +418,15 @@ behaviors:
     behavior_name: seekHumanInteraction
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: interact
+      - stage_id: target_approach
         order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      - stage_id: interact
+        order: 2
         selection_policy: random_one
         required: true
         candidates:
@@ -313,8 +442,15 @@ behaviors:
     behavior_name: seekInteraction
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: interact
+      - stage_id: target_approach
         order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      - stage_id: interact
+        order: 2
         selection_policy: random_one
         required: true
         candidates:
@@ -329,8 +465,15 @@ behaviors:
     behavior_name: inviteHumanToPlay
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: invite
+      - stage_id: target_approach
         order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      - stage_id: invite
+        order: 2
         selection_policy: random_one
         required: true
         candidates:
@@ -362,8 +505,15 @@ behaviors:
     behavior_name: inspectObject
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: inspect
+      - stage_id: target_approach
         order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      - stage_id: inspect
+        order: 2
         selection_policy: random_one
         required: true
         candidates:
@@ -381,8 +531,15 @@ behaviors:
     behavior_name: inspectFamiliarPlayItem
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: inspect
+      - stage_id: target_approach
         order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      - stage_id: inspect
+        order: 2
         selection_policy: random_one
         required: true
         candidates:
@@ -397,8 +554,15 @@ behaviors:
     behavior_name: inspectTrashCan
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: inspect
+      - stage_id: target_approach
         order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      - stage_id: inspect
+        order: 2
         selection_policy: random_one
         required: true
         candidates:
@@ -410,8 +574,15 @@ behaviors:
     behavior_name: inspectDeliveryBox
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: inspect
+      - stage_id: target_approach
         order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      - stage_id: inspect
+        order: 2
         selection_policy: random_one
         required: true
         candidates:
@@ -425,8 +596,15 @@ behaviors:
     behavior_name: inspectTissuePaper
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: inspect
+      - stage_id: target_approach
         order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      - stage_id: inspect
+        order: 2
         selection_policy: random_one
         required: true
         candidates:
@@ -439,8 +617,15 @@ behaviors:
     behavior_name: inspectDoor
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: inspect
+      - stage_id: target_approach
         order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      - stage_id: inspect
+        order: 2
         selection_policy: random_one
         required: true
         candidates:
@@ -454,22 +639,67 @@ behaviors:
     behavior_name: inspectDogFood
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: inspect
+      - stage_id: target_approach
         order: 1
         selection_policy: random_one
         required: true
+        failure_policy: abort
         candidates:
-          - {unit_id: ACT_VISUALLY_TRACK_FOOD_IN_HAND}
-          - {unit_id: ACT_CIRCLE_AROUND_OWNER}
-          - {unit_id: ACT_STAND_UP_AND_PAW_AT_OWNER_LEG}
-          - {unit_id: ACT_SPIN_IN_PLACE}
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      # 到达食盆点位后的固定仪式 (2026-09-18 定版): 低头 → 抬头 → 趴下 → 站立 →
+      # 再低头 → 左右扭腰.  order 1 仍是原来的视觉接近 (target_approach):
+      # 它是「到达点位」本身, 在导航流程里由 behavior_routes 跳过, 但保留给
+      # 非导航路径使用.
+      - stage_id: lower_head
+        order: 2
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD}
+      - stage_id: head_up
+        order: 3
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_RAISE_HEAD}
+      - stage_id: lie_down
+        order: 4
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_BASIC_LIE_DOWN}
+      - stage_id: stand_up
+        order: 5
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_BASIC_STAND}
+      - stage_id: lower_head_again
+        order: 6
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD}
+      - stage_id: waist_twist
+        order: 7
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_TWIST_WAIST_LEFT_RIGHT}
 
   expressCalmWithHuman:
     behavior_name: expressCalmWithHuman
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: expression
+      - stage_id: target_approach
         order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      - stage_id: expression
+        order: 2
         selection_policy: random_one
         required: true
         candidates:
@@ -495,8 +725,15 @@ behaviors:
     behavior_name: expressJoyWithHuman
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: expression
+      - stage_id: target_approach
         order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      - stage_id: expression
+        order: 2
         selection_policy: random_one
         required: true
         candidates:
@@ -525,8 +762,15 @@ behaviors:
     behavior_name: expressCuriosityWithHuman
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: expression
+      - stage_id: target_approach
         order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      - stage_id: expression
+        order: 2
         selection_policy: random_one
         required: true
         candidates:
@@ -547,8 +791,15 @@ behaviors:
     behavior_name: expressExcitementWithHuman
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: expression
+      - stage_id: target_approach
         order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      - stage_id: expression
+        order: 2
         selection_policy: random_one
         required: true
         candidates:
@@ -579,8 +830,15 @@ behaviors:
     behavior_name: expressAnxietyWithHuman
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: expression
+      - stage_id: target_approach
         order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      - stage_id: expression
+        order: 2
         selection_policy: random_one
         required: true
         candidates:
@@ -607,8 +865,15 @@ behaviors:
     behavior_name: expressFearWithHuman
     success_condition: all_required_stages_completed
     stages:
-      - stage_id: expression
+      - stage_id: target_approach
         order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      - stage_id: expression
+        order: 2
         selection_policy: random_one
         required: true
         candidates:
@@ -629,6 +894,140 @@ behaviors:
           - {unit_id: ACT_BARK_TENSE}
           - {unit_id: ACT_FREEZE_SHAKE}
 
+  expressCalmInPlaceWithHuman:
+    behavior_name: expressCalmInPlaceWithHuman
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: expression
+        order: 1
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_CHECK_OWNER}
+          - {unit_id: ACT_SLEEP_BY_FEET}
+
+  expressJoyInPlaceWithHuman:
+    behavior_name: expressJoyInPlaceWithHuman
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: expression
+        order: 1
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_NUZZLE_HEAD}
+          - {unit_id: ACT_NUZZLE_BODY}
+          - {unit_id: ACT_SHOW_BELLY}
+          - {unit_id: ACT_WINK}
+          - {unit_id: ACT_FETCH_TOY}
+          - {unit_id: ACT_LICK}
+
+  expressExcitementInPlaceWithHuman:
+    behavior_name: expressExcitementInPlaceWithHuman
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: expression
+        order: 1
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_JUMP_PAW}
+          - {unit_id: ACT_SPIN_FRONT}
+          - {unit_id: ACT_NIP_PLAYFUL}
+          - {unit_id: ACT_PLAY_BOW}
+          - {unit_id: ACT_ZOOMIE_CIRCLE}
+          - {unit_id: ACT_ASK_CUDDLE}
+
+  expressAnxietyInPlaceWithHuman:
+    behavior_name: expressAnxietyInPlaceWithHuman
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: expression
+        order: 1
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_PAW_LEG}
+          - {unit_id: ACT_WHINE}
+          - {unit_id: ACT_SEEK_PETS}
+
+  expressFearInPlaceWithHuman:
+    behavior_name: expressFearInPlaceWithHuman
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: expression
+        order: 1
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_HIDE_BEHIND}
+          - {unit_id: ACT_CLING_LEG}
+
+  expressCuriosityInPlaceWithHuman:
+    behavior_name: expressCuriosityInPlaceWithHuman
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: expression
+        order: 1
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_INTERACT_EXPLORE}
+
+  unhappy:
+    behavior_name: unhappy
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: target_approach
+        order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      - stage_id: expression
+        order: 2
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_OWNER_UNHAPPY}
+
+  miss_owner:
+    behavior_name: miss_owner
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: target_approach
+        order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      - stage_id: expression
+        order: 2
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_EXPRESS_MISS_YOU}
+
+  farewell_leave:
+    behavior_name: farewell_leave
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: target_approach
+        order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      - stage_id: expression
+        order: 2
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_OWNER_GOING_OUT}
+
   respond_owner_call:
     behavior_name: respond_owner_call
     success_condition: all_required_stages_completed
@@ -639,6 +1038,39 @@ behaviors:
         required: true
         candidates:
           - {unit_id: ACT_INTERACT_RESPOND_CALL}
+
+  approach_voice_caller:
+    behavior_name: approach_voice_caller
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: target_approach
+        order: 1
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_INTERACT_APPROACH_VOICE_CALLER}
+
+  respond_person_fall:
+    behavior_name: respond_person_fall
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: safety_stop
+        order: 1
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_PERCEPTION_RESPOND_PERSON_FALL}
+
+  respond_stop_gesture:
+    behavior_name: respond_stop_gesture
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: safety_stop
+        order: 1
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_PERCEPTION_RESPOND_STOP_GESTURE}
 
   sit_down:
     behavior_name: sit_down
@@ -672,6 +1104,123 @@ behaviors:
         required: true
         candidates:
           - {unit_id: ACT_BASIC_STAND}
+
+  play_alone:
+    behavior_name: play_alone
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: uwb_roam
+        order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_UWB_RANDOM_ROAM}
+      - stage_id: play
+        order: 2
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_GUARD_DOOR, interrupt_policy: immediate}
+          - {unit_id: ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD, interrupt_policy: immediate}
+          - {unit_id: ACT_STRETCH, interrupt_policy: immediate}
+
+  walk_to_random_point:
+    behavior_name: walk_to_random_point
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: navigation
+        order: 1
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_NAV_WALK_RANDOM}
+
+  go_out_to_play:
+    behavior_name: go_out_to_play
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: navigation
+        order: 1
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_NAV_GO_OUT_TO_PLAY}
+
+  go_home:
+    behavior_name: go_home
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: navigation
+        order: 1
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_NAV_GO_HOME}
+
+  approach_owner:
+    behavior_name: approach_owner
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: action
+        order: 1
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_INTERACT_APPROACH_OWNER_CLOSER}
+
+  back_up:
+    behavior_name: back_up
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: action
+        order: 1
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_BASIC_BACK_UP}
+
+  stand_still:
+    behavior_name: stand_still
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: ensure_standing
+        order: 1
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_BASIC_STAND}
+      - stage_id: hold_standing
+        order: 2
+        selection_policy: random_one
+        required: true
+        motion_state: stationary
+        candidates:
+          - {unit_id: ACT_CONTROL_HOLD_STANDING}
+
+  hold_position:
+    behavior_name: hold_position
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: hold_current_posture
+        order: 1
+        selection_policy: random_one
+        required: true
+        motion_state: stationary
+        candidates:
+          - {unit_id: ACT_CONTROL_HOLD_POSITION}
+
+  quiet:
+    behavior_name: quiet
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: stop_vocalization
+        order: 1
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_CONTROL_QUIET}
 
   wait_in_place:
     behavior_name: wait_in_place

@@ -37,7 +37,7 @@ Public API::
         # Support
         EligibilityChecker, PostureManager, InterruptManager,
         # Controller adapters
-        AgvMotionAdapter, Ros2TwistPublisher, TwistCommand,
+        Ros2TwistPublisher, TwistCommand,
         BaseControllerAdapter, MockControllerAdapter, create_adapter,
         # ROS2 (conditional)
         HAS_ROS2, ActionExecutorNode, main as ros_main,
@@ -46,8 +46,7 @@ Public API::
     )
 """
 
-from .adapters.agv_adapter import (
-    AgvMotionAdapter,
+from .adapters.velocity import (
     Ros2TwistPublisher,
     TwistCommand,
 )
@@ -91,7 +90,6 @@ __all__ = [
     "ExecutionResult",
     "ExecutionState",
     # Controller adapters
-    "AgvMotionAdapter",
     "Ros2TwistPublisher",
     "TwistCommand",
     "BehaviorMobilityAdapter",

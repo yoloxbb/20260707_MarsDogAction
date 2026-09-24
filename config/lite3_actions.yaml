@@ -1,0 +1,680 @@
+# Lite3 behavior-action backend.
+#
+# The backend publishes motion directly to /cmd_vel and simple commands to
+# /simple_cmd.  Run Lite3 bringup with use_bridge:=false so there is only one
+# velocity stream.  APP voice command 0x21010C0A and soft E-stop 0x21020C0E are
+# intentionally absent and are also blocked in code.
+enabled: false
+simple_cmd_topic: /simple_cmd
+status_topic: /robot_status
+cmd_vel_topic: /cmd_vel
+publish_rate_hz: 20.0
+status_timeout_sec: 1.0
+min_battery_percent: 25.0
+minimum_backward_clearance_m: 0.60
+mode_settle_sec: 0.10
+# Nav2 and pose reset may finish publishing before the chassis has left its
+# walking/busy state. Require fresh standing-idle observations before the next
+# behavior Stage or navigation request.
+navigation_settle_timeout_sec: 2.0
+navigation_stable_samples: 5
+# Entry-time posture recovery.  A step that declares ``require: stand`` used to
+# fail outright on a lying dog, and no plan step anywhere stood it back up, so
+# one unlucky random pick in 平静行为 (ACT_SPLOOT lies down, the other four
+# candidates need a standing dog) wedged every later action with
+# ``lite3_posture_mismatch`` until an operator intervened.  The backend now
+# stands the dog up first and then runs the step.  起立 measured 2.2 s on the
+# real dog (2026-09-18).
+posture_recovery_timeout_sec: 6.0
+stop_publish_count: 5
+command_repeat: 1
+command_repeat_interval_sec: 0.05
+
+# Safe logical proxies are enabled so every ACT_* can close its lifecycle.
+# Unsupported semantics use observable proxy_motion plans; only true
+# wait/hold/stop control semantics remain stationary.  Hardware-unverified
+# motion stays disabled and additionally requires an allowlist.
+allow_proxies: true
+allow_unverified: false
+# ``allow_unverified`` is necessary but not sufficient: only action IDs or
+# shared physical plan IDs listed here may cross the unverified gate.  These
+# proxy motions remain disabled by default and must be enabled explicitly for
+# supervised acceptance.
+accepted_unverified_actions:
+  - ACT_BASIC_LIE_DOWN
+  - ACT_BASIC_STAND
+  - ACT_CIRCLE_AROUND
+  - ACT_EXPRESS_MISS_YOU
+  - ACT_GETUP_STRETCH
+  - ACT_GUARD_DOOR
+  - ACT_INTERACT_GIVE_PAW
+  - ACT_RAISE_HEAD
+  - ACT_SNIFF_AND_CIRCLE_AT_TOILET_SPOT
+  - ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD
+  - ACT_STRETCH
+  - ACT_TWIST_WAIST_LEFT_RIGHT
+  - ACT_TRICK_SPIN
+
+# These are runtime clamps, not documentation.  Every velocity this backend
+# publishes is clamped to them, so a plan that asks for more does not fail --
+# it silently runs at the clamp, which for a curved plan changes the orbit
+# radius instead of reporting an error.  ``launch/action_executor.launch.py``
+# repeats both numbers as the ``lite3_max_*`` parameter defaults and the ROS
+# parameter wins over this block, so the two files must move together;
+# ``test_launch_lite3_clamps_match_this_file`` fails if they drift.
+#
+# 0.24 / 1.20 are sized for the 0.2 m 上厕所 orbit (v = omega * r).  Nothing
+# else in this file exceeds 0.20 m/s or 0.50 rad/s.
+limits:
+  max_linear_x: 0.24
+  max_linear_y: 0.15
+  max_angular_z: 1.20
+
+# Owner approach commands use the Tree-locked Vision target, SLAM localization,
+# and Nav2 obstacle avoidance.
+controller_route_overrides:
+  ACT_INTERACT_APPROACH_OWNER: person_nav_approach
+  ACT_INTERACT_APPROACH_OWNER_CLOSER: person_nav_approach
+  ACT_INTERACT_RETURN_OWNER: person_nav_approach
+
+# Direct mappings contain exact safe primitives plus explicitly labelled
+# proxies.  No plan below may claim a biological or manipulation side effect
+# that Lite3 did not physically perform.
+action_sequences:
+  ACT_BASIC_LIE_DOWN:
+    fidelity: exact
+    verified: false
+    semantic_effect: physical
+    description: State-aware single-toggle transition to a confirmed stable lying posture.
+    sequence:
+      - {type: target_posture, target: lie, completion_timeout_sec: 4.5, stable_samples: 5}
+
+  ACT_BASIC_STAND:
+    fidelity: exact
+    verified: false
+    semantic_effect: physical
+    description: State-aware single-toggle transition to a confirmed stable standing posture.
+    sequence:
+      - {type: target_posture, target: stand, completion_timeout_sec: 4.5, stable_samples: 5}
+
+  ACT_BASIC_BACK_UP:
+    fidelity: exact
+    verified: true
+    description: Bounded reverse velocity followed by redundant zero Twist.
+    sequence:
+      - type: twist
+        linear_x: -0.12
+        linear_y: 0.0
+        angular_z: 0.0
+        duration_sec: 1.2
+        minimum_backward_clearance_m: 0.60
+
+  ACT_CONTROL_HOLD_STANDING:
+    fidelity: exact
+    verified: true
+    description: Keep the selected chassis stationary while standing.
+    sequence:
+      - {type: hold, require: stand, duration_sec: 3.0}
+
+  ACT_CONTROL_HOLD_POSITION:
+    fidelity: exact
+    verified: true
+    description: Preserve current posture and publish only zero velocity.
+    sequence:
+      - {type: hold, duration_sec: 5.0}
+
+  ACT_BASIC_WAIT:
+    fidelity: exact
+    verified: true
+    description: Wait in place with zero velocity.
+    sequence:
+      - {type: hold, duration_sec: 3.0}
+
+  ACT_TRICK_ROLL_OVER:
+    plan_id: ACT_GUARD_DOOR
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Safe body-yaw proxy; roll is forbidden for the top-mounted payload.
+    sequence:
+      - type: pose
+        cmd_code: 0x21010135
+        value: 10500
+        require: stand
+        duration_sec: 1.6
+
+  ACT_TRICK_SPIN:
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Bounded low-speed open-loop yaw proxy; not claimed as a full circle.
+    sequence:
+      - type: twist
+        linear_x: 0.0
+        linear_y: 0.0
+        angular_z: 0.35
+        duration_sec: 2.0
+
+  ACT_PERCEPTION_RESPOND_PERSON_FALL:
+    fidelity: exact
+    verified: true
+    description: Cancel motion and publish a redundant zero-velocity burst.
+    sequence:
+      - {type: hold, duration_sec: 0.2, require_status: false}
+
+  ACT_PERCEPTION_RESPOND_STOP_GESTURE:
+    fidelity: exact
+    verified: true
+    description: Cancel motion and publish a redundant zero-velocity burst.
+    sequence:
+      - {type: hold, duration_sec: 0.2, require_status: false}
+
+  ACT_SYSTEM_EMERGENCY_STOP:
+    fidelity: exact
+    verified: true
+    description: Software stop only; never sends the motor-disabling soft E-stop.
+    sequence:
+      - {type: hold, duration_sec: 0.1, require_status: false}
+
+  # 0x21010130 (pitch) is a dead-zone axis: the motion controller treats
+  # |value| <= 6553 as zero, so the bottom fifth of the range is unusable and
+  # the original 7500 here sat only 3.6% above that floor.  On the real dog
+  # (2026-09-18) the operator could not see this 低头 or the mirror 抬头 in
+  # 上厕所 at all, so both directions moved to 20000.
+  # Careful with the generalisation: the dead-zone margin does not predict
+  # visibility by itself.  偏航 10500 sits the same 947 above its own dead zone
+  # and the operator described it as 明显扭转, so pitch is simply the blunter
+  # axis.  Do not use this note to justify raising the yaw or body-height
+  # values.  All four pitch definitions in this file move together.
+  # The 低头 hold also went 1.0 -> 2.0 s on 2026-09-18: at 20000 the tilt was
+  # visible but went by too fast to read.  ``ACT_RAISE_HEAD`` holds 2.5 s
+  # because it is a completion signal rather than a transient gesture.
+  ACT_EXPRESS_MISS_YOU:
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Standing head-down-and-return proxy after owner approach.
+    sequence:
+      - type: pose
+        cmd_code: 0x21010130
+        value: 20000
+        require: stand
+        duration_sec: 2.0
+
+  ACT_OWNER_GOING_OUT:
+    fidelity: proxy
+    verified: true
+    semantic_effect: proxy_motion
+    description: Rear-clearance-guarded farewell retreat.
+    sequence:
+      - {type: twist, linear_x: -0.08, linear_y: 0.0, angular_z: 0.0, duration_sec: 0.8, minimum_backward_clearance_m: 0.60}
+      - {type: hold, duration_sec: 0.5}
+
+  ACT_WAG_TAIL:
+    plan_id: ACT_GUARD_DOOR
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Standing body-yaw-and-return proxy; roll is forbidden by payload safety.
+    sequence:
+      - type: pose
+        cmd_code: 0x21010135
+        value: 10500
+        require: stand
+        duration_sec: 1.6
+
+  # Anchor of the whole 偏航 proxy family: 114 ACT_* reach this exact sequence
+  # through ``plan_id: ACT_GUARD_DOOR`` (4 groups plus ACT_WAG_TAIL and
+  # ACT_TRICK_ROLL_OVER), and the loader requires every one of them to be
+  # byte-identical to this block.  Changing the duration here changes all 114 at
+  # once -- there is no way to lengthen one of them alone.
+  # 0.8 -> 1.6 s on 2026-09-18: 平静行为's 扭腰 read as a flick rather than a
+  # gesture.  Every unit timeout in this family at or below 4.0 s had to be
+  # raised with it, because the hold, the mode switch and the settle wait share
+  # the unit budget, and an entry-time posture recovery can add 2.2 s on top.
+  ACT_GUARD_DOOR:
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Standing body-yaw-and-return proxy for a guarded look toward the door.
+    sequence:
+      - type: pose
+        cmd_code: 0x21010135
+        value: 10500
+        require: stand
+        duration_sec: 1.6
+
+  ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD:
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Standing head-down-and-return proxy for sniffing the bowl.
+    sequence:
+      - type: pose
+        cmd_code: 0x21010130
+        value: 20000
+        require: stand
+        duration_sec: 2.0
+
+  ACT_STRETCH:
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Standing body-lower-and-return proxy for stretching.
+    sequence:
+      - type: pose
+        cmd_code: 0x21010102
+        value: -21000
+        require: stand
+        duration_sec: 1.0
+
+  # 上厕所: 绕点走圈三圈.  The dog drives forward while turning, so the two
+  # channels that Lite3 exposes as axes in moving mode (0x21010130 = forward
+  # velocity, 0x21010135 = yaw rate) trace a circle of radius linear_x /
+  # angular_z.  The first version -- 0.20 / 0.40, i.e. a 0.5 m radius over
+  # 47.1 s -- read as slow wandering rather than circling, so on 2026-09-18 the
+  # lap rate went up 3x and the radius came in to 0.2 m: 0.24 / 1.20 = 0.2 m,
+  # and three laps is 3*2*pi/1.20 = 15.7 s.  Both numbers now sit exactly on
+  # the raised ``limits`` above, which is also what keeps the clamp in
+  # ``publish_velocity`` from silently widening the radius.
+  # Open loop, like the sleep circle: /robot_status carries no yaw, so the lap
+  # count is timed rather than measured.  ``minimum_forward_clearance_m`` is the
+  # only guard on the arc -- this is the first plan that drives the dog forward
+  # under our own control for a sustained stretch, and the backward-clearance
+  # check does not cover it.  A 0.2 m radius is tight enough that the dog is
+  # nearly pivoting while it walks, so the operator keeps it on a clear floor.
+  ACT_SNIFF_AND_CIRCLE_AT_TOILET_SPOT:
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Bounded open-loop 3-lap walk-around of the elimination spot.
+    sequence:
+      - type: twist
+        linear_x: 0.24
+        linear_y: 0.0
+        angular_z: 1.20
+        duration_sec: 15.7
+        minimum_forward_clearance_m: 0.60
+
+  # 抬头 is the completion marker for 上厕所; the mirror of the 低头 proxies.
+  # Held 2.5 s: this one has to read as a deliberate signal, not a flicker, and
+  # 1.5 s still went by too fast for the operator.
+  ACT_RAISE_HEAD:
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Standing head-up-and-return proxy used as a completion marker.
+    sequence:
+      - type: pose
+        cmd_code: 0x21010130
+        value: -20000
+        require: stand
+        duration_sec: 2.5
+
+  # 进食流程的收尾: 左右各扭一次腰.  Both halves are the same 偏航 proxy the
+  # 114-action family uses -- 0x21010135 = 10500, the value the operator called
+  # 「明显扭转，幅度清晰」 on the real dog -- but the second half negates it, so
+  # this cannot be a member of that family: the anchor is byte-identical and
+  # single-direction, and the loader rejects a variant.  1.6 s per side matches
+  # the family hold.  Each side pays its own in-place mode switch and settle
+  # (see §4.3 of docs/LITE3_ROS2_INTEGRATION.md), which is why the unit budget
+  # is 8 s rather than the 5 s a single hold gets.
+  ACT_TWIST_WAIST_LEFT_RIGHT:
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Left-then-right body-yaw twist proxy; roll is forbidden for the top-mounted payload.
+    sequence:
+      - type: pose
+        cmd_code: 0x21010135
+        value: 10500
+        require: stand
+        duration_sec: 1.6
+      - type: pose
+        cmd_code: 0x21010135
+        value: -10500
+        require: stand
+        duration_sec: 1.6
+
+  ACT_GETUP_STRETCH:
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Closed-loop stable-stand target for wake-up motions.
+    sequence:
+      - {type: target_posture, target: stand, completion_timeout_sec: 4.5, stable_samples: 5}
+
+  # 睡前转一圈.  Lite3 has no native "turn one full circle" behavior command,
+  # so this drives the moving-mode angular-velocity channel (0x21010135 is a
+  # yaw-axis pose command in place mode but an angular velocity in moving mode)
+  # open loop for 2*pi/1.0 = 6.3 s.  Open loop is a deliberate trade: the
+  # /robot_status message carries no yaw, so the turn is timed rather than
+  # measured and lands near a full circle instead of exactly on one.  The dog
+  # must be standing and the area around it clear -- the existing rear-clearance
+  # guard does not cover rotation.
+  #
+  # 2026-09-20: the operator asked for twice the turn rate, so this is one turn
+  # at 1.0 rad/s instead of one turn at 0.5 rad/s -- the circle stays a bounded
+  # 360-degree turn, it just takes half as long.  Speed and duration must move
+  # together: raising angular_z alone would wind up two turns inside the old
+  # 12.6 s window.  1.0 rad/s is well inside the 1.20 rad/s clamp above, and
+  # this file already runs other twists at the full 1.20.
+  ACT_CIRCLE_AROUND:
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Bounded open-loop 360-degree in-place turn at 1.0 rad/s.
+    sequence:
+      - type: twist
+        linear_x: 0.0
+        linear_y: 0.0
+        angular_z: 1.0
+        duration_sec: 6.3
+
+  ACT_INTERACT_GIVE_PAW:
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Native Lite3 hello when lying; tested twist-body fallback when standing.
+    sequence:
+      - type: simple
+        cmd_code: 0x21010507
+        require: lie
+        when_initial_basic_states: [1]
+        active_basic_states: [20, 25]
+        terminal_basic_states: [6]
+        terminal_gait_states: [0]
+        terminal_motion_states: [0]
+        # Measured on the real dog (2026-09-18): the native hello runs
+        # 20 -> 25 -> 5 -> 6 and only reaches stable standing ~8.2 s after the
+        # command.  The previous 4.5 s made every hello report a timeout even
+        # though the dog completed it correctly.
+        completion_timeout_sec: 12.0
+      - type: simple
+        cmd_code: 0x21010204
+        require: stand
+        when_initial_basic_states: [6]
+        active_motion_states: [2]
+        terminal_basic_states: [6]
+        terminal_gait_states: [0]
+        terminal_motion_states: [0]
+        # Measured on the real dog (2026-09-18): (6,0,2) -> (6,0,0) takes
+        # ~20 s, and the twist is fully in place (backward ultrasound span
+        # 0.05 m over the whole motion).  The previous 4.5 s reported a
+        # timeout for a twist the dog performed correctly.
+        completion_timeout_sec: 25.0
+
+  # NOTE: ``ACT_BONE_DANCE`` (0x2101030C, 太空步) was removed here on 2026-09-18.
+  # It is not a one-shot action but an unbounded gait: the dog keeps moonwalking
+  # until something explicitly stops it, so ``gait_state`` never returns to 0
+  # and no terminal-state contract can hold.  On the real dog the backend timed
+  # out at 4.6 s as designed, the dog kept stepping for another 22 s, entered
+  # 失控保护 (basic_state=8), passed through an undocumented basic_state=99 and
+  # finally lay down by itself -- leaving gait_state=12 stuck, which makes the
+  # backend reject every subsequent action as ``lite3_gait_busy``.
+  # 0x2101030C is now in ``BLOCKED_BEHAVIOR_COMMANDS``; with no plan defined,
+  # ``execute_step`` refuses it as ``lite3_action_unmapped``.
+
+# Shared proxy groups map unsupported biological and manipulation semantics to
+# observable, bounded Lite3 physical plans.  They never claim the substituted
+# motion is semantically exact.
+action_groups:
+  hello_social_native:
+    plan_id: ACT_INTERACT_GIVE_PAW
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Native hello when lying; tested twist-body fallback when standing.
+    sequence:
+      - {type: simple, cmd_code: 0x21010507, require: lie, when_initial_basic_states: [1], active_basic_states: [20, 25], terminal_basic_states: [6], terminal_gait_states: [0], terminal_motion_states: [0], completion_timeout_sec: 12.0}  # measured ~8.2 s on the real dog
+      - {type: simple, cmd_code: 0x21010204, require: stand, when_initial_basic_states: [6], active_motion_states: [2], terminal_basic_states: [6], terminal_gait_states: [0], terminal_motion_states: [0], completion_timeout_sec: 25.0}  # measured ~20 s on the real dog
+    actions:
+      - ACT_INTERACT_HIGH_FIVE
+      - ACT_PAW_AT_OWNER
+      - ACT_WHINE_OR_VOCALIZE_SOFTLY
+
+  joy_body_lower:
+    plan_id: ACT_STRETCH
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Body-lower-and-return proxy for play bows and friendly nudges.
+    sequence:
+      - {type: pose, cmd_code: 0x21010102, value: -21000, require: stand, duration_sec: 1.0}
+    actions:
+      - ACT_PLAY_BOW
+      - ACT_NUZZLE_HEAD
+
+  # NOTE: the ``excitement_moonwalk`` group (ACT_JUMP_PAW -> 0x2101030C) was
+  # removed on 2026-09-18 along with the ACT_BONE_DANCE plan it pointed at.
+  # See the note in ``action_sequences`` for why 太空步 is unsatisfiable.
+
+  low_semantic_pitch:
+    plan_id: ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Head-down-and-return proxy for low, sniffing, or withdrawn semantics.
+    sequence:
+      - {type: pose, cmd_code: 0x21010130, value: 20000, require: stand, duration_sec: 2.0}
+    actions:
+      - ACT_SQUAT_AND_ELIMINATE
+      - ACT_LOWER_HEAD_FLOP_EARS_WAG_TAIL
+      - ACT_HIDE_SHRINK
+      - ACT_WHINE
+      - ACT_HIDE_BEHIND
+      - ACT_FREEZE_SHAKE
+      - ACT_OWNER_UNHAPPY
+
+  scan_semantic_yaw:
+    plan_id: ACT_GUARD_DOOR
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Body-yaw-and-return proxy for looking, scanning, and sniffing semantics.
+    sequence:
+      - {type: pose, cmd_code: 0x21010135, value: 10500, require: stand, duration_sec: 1.6}
+    actions:
+      - ACT_STOP_OBSERVE_AND_TILT_HEAD
+      - ACT_INTERACT_EXPLORE
+      - ACT_NON_INTERACT_EXPLORE
+      - ACT_TROT_STOP_AND_SNIFF
+      - ACT_SNIFF_OBJECT
+      - ACT_SNIFF_SLIPPERS_SOCKS_OR_TOY
+      - ACT_SNIFF_TRASH_CAN
+      - ACT_SNIFF_DELIVERY_BOX
+      - ACT_SNIFF_TISSUE
+      - ACT_SNIFF_AROUND_DOOR
+      - ACT_YAWN
+
+  sleep_semantic_target:
+    plan_id: ACT_BASIC_LIE_DOWN
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Closed-loop stable-lie target for unsupported curled or side sleep poses.
+    sequence:
+      - {type: target_posture, target: lie, completion_timeout_sec: 4.5, stable_samples: 5}
+    actions:
+      - ACT_SLEEP_CURLED_UP
+      - ACT_SLEEP_ON_STOMACH
+      - ACT_SLEEP_ON_SIDE_CURLED_UP
+      - ACT_SLEEP_ON_SIDE
+      - ACT_SLEEP_ON_BACK
+      - ACT_TRICK_PLAY_DEAD
+
+  lie_semantic_target:
+    plan_id: ACT_BASIC_LIE_DOWN
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Closed-loop stable-lie target for behavior semantics that end lying.
+    sequence:
+      - {type: target_posture, target: lie, completion_timeout_sec: 4.5, stable_samples: 5}
+    actions:
+      - ACT_SPLoot_LIE_DOWN
+      - ACT_FLIP_BODY
+      - ACT_RETURN_TO_CHARGER
+      - ACT_BARK_AND_LIE_DOWN_IF_NO_CHARGER
+      - ACT_LIE_BESIDE_OTHER_ANIMAL
+      - ACT_FIND_PLACE_TO_LIE_DOWN
+      - ACT_LIE_BY_DOOR
+      - ACT_SLEEP_BY_FEET
+      - ACT_SPLOOT
+
+  wake_semantic_stand:
+    plan_id: ACT_GETUP_STRETCH
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Closed-loop stable-stand target for unsupported wake-up variants.
+    sequence:
+      - {type: target_posture, target: stand, completion_timeout_sec: 4.5, stable_samples: 5}
+    actions:
+      - ACT_GETUP_CRAWL
+      - ACT_GETUP_ROLL
+      - ACT_GETUP_BOUNCE
+      - ACT_GETUP_SIT
+
+  sit_semantic_lower:
+    plan_id: ACT_STRETCH
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Bounded body-lower proxy because Lite3 exposes no stable sitting state.
+    sequence:
+      - {type: pose, cmd_code: 0x21010102, value: -21000, require: stand, duration_sec: 1.0}
+    actions:
+      - ACT_BASIC_SIT
+      - ACT_SIT_BY_DOOR_AND_LOOK_BACK_AT_OWNER
+      - ACT_SIT_IN_FRONT_OF_OWNER_AND_LOOK_UP
+
+  quiet_attention_yaw:
+    plan_id: ACT_GUARD_DOOR
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Small body-yaw-and-return proxy for quiet attention after mobility.
+    sequence:
+      - {type: pose, cmd_code: 0x21010135, value: 10500, require: stand, duration_sec: 1.6}
+    actions:
+      - ACT_SLOW_DOWN_IN_RESPONSE_TO_OWNER
+      - ACT_WAIT_BY_BOWL_OR_TREAT_CABINET
+      - ACT_WHINE_SOFTLY
+      - ACT_CHECK_OWNER
+
+  exit_back_proxy:
+    fidelity: proxy
+    verified: true
+    semantic_effect: proxy_motion
+    description: Rear-clearance-guarded retreat for exit behavior.
+    sequence:
+      - {type: twist, linear_x: -0.10, linear_y: 0.0, angular_z: 0.0, duration_sec: 0.8, minimum_backward_clearance_m: 0.60}
+    actions:
+      - ACT_WALK_AWAY_OR_SHAKE_HEAD
+
+  safe_body_yaw_fallback:
+    plan_id: ACT_GUARD_DOOR
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Observable body-yaw proxy; roll is forbidden for the top-mounted payload.
+    sequence:
+      - {type: pose, cmd_code: 0x21010135, value: 10500, require: stand, duration_sec: 1.6}
+    actions:
+      - ACT_APPROACH_SLOWLY_SIDEWAYS
+      - ACT_ASK_CUDDLE
+      - ACT_BARK_AT_OBJECT
+      - ACT_BARK_OR_WHINE_BRIEFLY
+      - ACT_BARK_TENSE
+      - ACT_BAT_TOY
+      - ACT_BITE_AND_SHAKE_SLIPPERS_SOCKS_OR_TOY
+      - ACT_BITE_DELIVERY_BOX
+      - ACT_BUMP_OTHER_GENTLY_WITH_RELAXED_BODY
+      - ACT_CARRY_AND_DROP_OBJECT_AGAIN
+      - ACT_CARRY_AND_HIDE_OBJECT
+      - ACT_CARRY_DELIVERY_BOX_TO_PERSON
+      - ACT_CARRY_LEASH_TO_OWNER
+      - ACT_CARRY_SLIPPERS_SOCKS_OR_TOY_TO_OWNER
+      - ACT_CARRY_TISSUE_TO_PERSON
+      - ACT_CARRY_TOY_AND_WAG_TAIL_IN_FRONT_OF_OWNER
+      - ACT_CHASE_TAIL
+      - ACT_CIRCLE_EMPTY_BOWL_OR_WATER_DISH
+      - ACT_CLING_LEG
+      - ACT_COMFY_STRETCH
+      - ACT_COVER_EYES
+      - ACT_CRAWL_THROUGH_LOW_GAP
+      - ACT_FETCH_LEASH
+      - ACT_FETCH_TOY
+      - ACT_FOLLOW_AND_STAY_CLOSE_TO_OWNER
+      - ACT_GENTLY_MOUTH_PANTS_OR_HAND
+      - ACT_IGNORE_DELIVERY_BOX
+      - ACT_IGNORE_DOOR
+      - ACT_IGNORE_SLIPPERS_SOCKS_OR_TOY
+      - ACT_IGNORE_TISSUE
+      - ACT_IGNORE_TRASH_CAN
+      - ACT_KNOCK_OVER_OBJECT
+      - ACT_LEAN_AGAINST_DOOR
+      - ACT_LICK
+      - ACT_LICK_FACE
+      - ACT_LICK_FUR_OR_PAWS
+      - ACT_LICK_PAWS_OR_FUR
+      - ACT_LICK_SELF
+      - ACT_NIBBLE_OBJECT
+      - ACT_NIP_PLAYFUL
+      - ACT_NUDGE_OR_RUB_AGAINST_OWNER_HAND
+      - ACT_NUDGE_OWNER_AND_LOOK_AT_FOOD_OR_DOOR
+      - ACT_NUZZLE_BODY
+      - ACT_OBJECT_BRING
+      - ACT_OBJECT_DROP
+      - ACT_OBJECT_FETCH
+      - ACT_PACE
+      - ACT_PATROL
+      - ACT_PATROL_ALONG_WALL
+      - ACT_PAW_AT_BOWL_OR_TREAT_CABINET
+      - ACT_PAW_AT_MUZZLE
+      - ACT_PAW_AT_SLIPPERS_SOCKS_OR_TOY
+      - ACT_PAW_GENTLY_AT_OTHER
+      - ACT_PAW_LEG
+      - ACT_PLACE_FRONT_PAWS_ON_OWNER_FOR_ATTENTION
+      - ACT_POUNCE_ON_SLIPPERS_SOCKS_OR_TOY
+      - ACT_POUNCE_OR_SIDE_HOP_GENTLY
+      - ACT_PURR
+      - ACT_PUSH_OBJECT_WITH_PAW
+      - ACT_RETURN_TO_DOG_BED_FOR_CHARGING
+      - ACT_ROLL_OVER_FOR_BELLY_RUB
+      - ACT_RUB_AGAINST_LEG_OR_LEAN_ON_OWNER
+      - ACT_RUB_BODY_AGAINST_OBJECT
+      - ACT_RUMMAGE_THROUGH_TRASH_CAN
+      - ACT_RUN_AWAY_AND_LOOK_BACK
+      - ACT_RUN_IN_CIRCLES_OR_CHASE
+      - ACT_RUN_IN_CIRCLES_OR_ZOOMIES
+      - ACT_SCRATCH_BED_OR_GROUND
+      - ACT_SCRATCH_DELIVERY_BOX_WITH_PAW
+      - ACT_SCRATCH_DOOR
+      - ACT_SCRATCH_EAR_WITH_HIND_LEG
+      - ACT_SCRATCH_OBJECT_GENTLY
+      - ACT_SCRATCH_SOIL_OR_GROUND
+      - ACT_SCRATCH_TISSUE_WITH_PAW
+      - ACT_SEEK_PETS
+      - ACT_SHAKE_OFF_WATER
+      - ACT_SHAKE_TOY
+      - ACT_SHOW_BELLY
+      - ACT_SIDE_HOP_WITH_PLAY_POSTURE
+      - ACT_SNIFF_BUTT_OR_TAIL
+      - ACT_SNIFF_EXCREMENT
+      - ACT_SNIFF_FACE_OR_EARS
+      - ACT_SNIFF_TOWARD_OTHER_ANIMAL
+      - ACT_SPIN_FRONT
+      - ACT_STAND_AND_SCRATCH_HIGH
+      - ACT_STRETCH_BODY
+      - ACT_TOUCH_NOSE_OR_HEAD_GENTLY
+      - ACT_TOUCH_OR_CARRY_OBJECT_WITH_MOUTH
+      - ACT_TROT_BOUNCE
+      - ACT_TUCK_TAIL
+      - ACT_TWITCH_OR_KICK_LEGS
+      - ACT_WALK_SLOWLY_AND_SNIFF_GROUND
+      - ACT_WHIMPER
+      - ACT_WINK
+      - ACT_ZOOMIES
+      - ACT_ZOOMIE_CIRCLE

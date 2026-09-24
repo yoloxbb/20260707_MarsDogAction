@@ -11,8 +11,10 @@ import os
 import shutil
 import subprocess
 import threading
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +157,8 @@ class BehaviorSoundController:
 
         behavior_sounds = self._config.get("behavior_sounds", {})
         configured = behavior_sounds.get(behavior_name)
+        if behavior_name in behavior_sounds and configured is None:
+            return None
         if configured is None:
             voice_behaviors = set(
                 self._config.get("voice_command_behaviors", [])
@@ -164,17 +168,102 @@ class BehaviorSoundController:
         if not configured:
             return None
 
-        path = Path(str(configured)).expanduser()
-        if not path.is_absolute():
-            path = self._config_dir / path
-        return path
+        return self._resolve(configured)
+
+    def stage_sound_path(self, behavior_name: str, stage_id: str) -> Path | None:
+        """Resolve the configured sound for one exact Stage of a behavior.
+
+        Unlike :meth:`sound_path_for` this never falls back to the generic
+        voice-command file: an unlisted behavior or Stage is intentionally
+        silent, and a Stage entry is always an explicit file.
+        """
+        if not self._config.get("enabled", False):
+            return None
+
+        stage_sounds = self._config.get("stage_sounds", {})
+        if not isinstance(stage_sounds, Mapping):
+            return None
+        per_behavior = stage_sounds.get(behavior_name)
+        if not isinstance(per_behavior, Mapping):
+            return None
+        configured = per_behavior.get(stage_id)
+        if not configured:
+            return None
+
+        return self._resolve(configured)
 
     def play_for(self, behavior_name: str) -> Path | None:
         """Start the configured behavior sound, replacing any previous one."""
         path = self.sound_path_for(behavior_name)
         if path is None:
             return None
+        if self._start(path) is None:
+            return None
+        return path
 
+    @contextmanager
+    def stage_sound(
+        self, behavior_name: str, stage_id: str
+    ) -> Iterator[Path | None]:
+        """Own the audio stream for the duration of a single Stage.
+
+        Yields the resolved path, or ``None`` when the Stage has no configured
+        sound — or has one that cannot be played (missing file, no audio
+        backend), in which case the Stage still runs silently.
+
+        The stream started here is stopped on exit, including when the body
+        raises. A stream that was replaced meanwhile — by a behavior-level
+        :meth:`play_for`, ``quiet``, or a preemption — is left untouched, which
+        is why the check is object identity and not a file comparison.
+        """
+        path = self.stage_sound_path(behavior_name, stage_id)
+        if path is None:
+            yield None
+            return
+
+        player = self._start(path)
+        if player is None:
+            yield None
+            return
+
+        try:
+            yield path
+        finally:
+            self._stop_if_active(player)
+
+    def apply_control_behavior(self, behavior_name: str) -> bool:
+        """Apply configured audio-only control and report whether it matched."""
+        stop_behaviors = set(self._config.get("stop_behaviors", []))
+        if behavior_name not in stop_behaviors:
+            return False
+        self.stop()
+        return True
+
+    def stop(self) -> None:
+        """Stop and release the active behavior sound, if any."""
+        with self._lock:
+            player = self._active_player
+            self._active_player = None
+        if player is not None:
+            player.stop()
+
+    # ── internal ─────────────────────────────────────────────────────────
+
+    def _resolve(self, configured: Any) -> Path:
+        """Turn a configured value into a path. Does not check ``enabled``.
+
+        Relative values resolve from the config directory, so packaged assets
+        travel with the package. Every public entry point checks ``enabled``
+        itself — this helper must stay a pure path computation or the global
+        switch would be bypassed.
+        """
+        path = Path(str(configured)).expanduser()
+        if not path.is_absolute():
+            path = self._config_dir / path
+        return path
+
+    def _start(self, path: Path) -> SoundPlayer | None:
+        """Replace the active stream with ``path`` and start playback."""
         player = self._player_factory(path)
         with self._lock:
             previous = self._active_player
@@ -184,12 +273,13 @@ class BehaviorSoundController:
             if not player.play():
                 return None
             self._active_player = player
-        return path
+        return player
 
-    def stop(self) -> None:
-        """Stop and release the active behavior sound, if any."""
+    def _stop_if_active(self, player: SoundPlayer) -> bool:
+        """Stop ``player`` only while it is still the active stream."""
         with self._lock:
-            player = self._active_player
+            if self._active_player is not player:
+                return False
             self._active_player = None
-        if player is not None:
-            player.stop()
+        player.stop()
+        return True

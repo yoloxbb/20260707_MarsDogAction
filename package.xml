@@ -16,6 +16,11 @@
   <depend>geometry_msgs</depend>
   <depend>action_msgs</depend>
   <depend>nav2_msgs</depend>
+  <depend>marsdog_voice_interaction</depend>
+  <depend>marsdog_vision_interaction</depend>
+  <exec_depend>unitree_api</exec_depend>
+  <exec_depend>unitree_go</exec_depend>
+  <exec_depend>transfer_interfaces</exec_depend>
 
   <!--
     Public interface dependency: ExecuteBehavior.action will eventually

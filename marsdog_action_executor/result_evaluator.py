@@ -91,6 +91,23 @@ class ResultEvaluator:
                 reward=-1.0,
             )
 
+        approach = ctx.metadata.get("target_approach")
+        if isinstance(approach, dict) and approach.get("recovery_required"):
+            reason = str(approach.get("reason") or "nav2_terminal_unknown:operator_recovery_required")
+            return BehaviorResult(
+                success=False,
+                status="controller_error",
+                requested_behavior_name=ctx.requested_behavior_name,
+                resolved_behavior_name=behavior_name,
+                completed_stages=list(ctx.completed_stages),
+                executed_units=list(ctx.executed_units),
+                goal_achieved=False,
+                result_code="CONTROLLER_ERROR",
+                message=reason,
+                reason=reason,
+                reward=-1.0,
+            )
+
         if ctx.cancel_requested:
             return BehaviorResult(
                 success=False,
@@ -103,6 +120,35 @@ class ResultEvaluator:
                 result_code="CANCELED",
                 message="Canceled by client",
                 reward=-0.1,
+            )
+
+        unit_failure_state = str(
+            ctx.metadata.get("unit_failure_state", "")
+        )
+        unit_failure_reason = str(
+            ctx.metadata.get("unit_failure_reason", "")
+        )
+        if unit_failure_state and any(
+            value is False for value in stage_results.values()
+        ):
+            status = (
+                unit_failure_state
+                if unit_failure_state
+                in {"timeout", "controller_error", "canceled"}
+                else "failure"
+            )
+            return BehaviorResult(
+                success=False,
+                status=status,
+                requested_behavior_name=ctx.requested_behavior_name,
+                resolved_behavior_name=behavior_name,
+                completed_stages=list(ctx.completed_stages),
+                executed_units=list(ctx.executed_units),
+                goal_achieved=False,
+                result_code=status.upper(),
+                message=unit_failure_reason or "Action unit failed",
+                reason=unit_failure_reason,
+                reward=-0.5,
             )
 
         # Determine success based on condition

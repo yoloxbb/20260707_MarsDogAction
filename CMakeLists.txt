@@ -9,6 +9,7 @@ find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(action_msgs REQUIRED)
 find_package(nav2_msgs REQUIRED)
+find_package(marsdog_voice_interaction REQUIRED)
 
 # NOTE: ExecuteBehavior.action has been migrated to marsdog_interfaces.
 # The ros_node will prefer marsdog_interfaces.action.ExecuteBehavior when

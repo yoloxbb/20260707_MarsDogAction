@@ -1,4 +1,31 @@
 enabled: false
+
+# Production navigation is executed through the shared waypoint_nav service.
+# Fixed routes use the exact names stored in ~/.ros/waypoints.yaml.  Random
+# routes send the reserved target K so waypoint_nav generates a safe target
+# from the current /map.
+waypoint_nav:
+  service_name: /waypoint_nav/task
+  status_topic: /waypoint_nav/status
+  protocol_version: "1.0"
+  client_id: marsdog_action_executor
+  service_timeout_sec: 5.0
+  query_timeout_sec: 2.0
+  cancel_confirmation_timeout_sec: 5.0
+  terminal_retention_sec: 86400
+  preempt_lock_wait_sec: 8.0
+  # Internal semantic route -> exact place name in ~/.ros/waypoints.yaml.
+  # waypoint_nav accepts either the stable ID or the exact name.  Keep these
+  # names synchronized with the checklist loaded by BehaviorTree.
+  places:
+    A: 卧室
+    B: 充电桩
+    C: 厨房
+    D: 卫生间
+    E: 客厅
+
+# Legacy direct-Nav2 client settings retained for compatibility/test injection;
+# production fixed and random routes use waypoint_nav.
 action_name: /navigate_to_pose
 frame_id: map
 server_timeout_sec: 10.0
@@ -6,134 +33,128 @@ result_timeout_sec: 300.0
 waypoints:
   A:
     label: sleep
-    x: -0.847
-    y: -0.423
-    orientation_z: 0.988
-    orientation_w: -0.155
+    x: -3.715
+    y: -1.065
+    orientation_z: 0.136
+    orientation_w: 0.991
   B:
     label: charging
-    x: -3.025
-    y: -1.709
-    orientation_z: 0.996
-    orientation_w: -0.087
+    x: -1.855
+    y: -0.665
+    orientation_z: 0.790
+    orientation_w: 0.613
   C:
     label: food
-    x: -2.459
-    y: 1.806
-    orientation_z: 0.161
-    orientation_w: 0.987
+    x: -2.961
+    y: 1.478
+    orientation_z: 0.259
+    orientation_w: 0.966
   D:
     label: toilet
-    x: -4.197
-    y: 2.982
-    orientation_z: 0.149
-    orientation_w: 0.989
+    x: -1.905
+    y: 3.360
+    orientation_z: -0.708
+    orientation_w: 0.706
   E:
     label: cleaning
-    x: -1.144
-    y: 4.43
-    orientation_z: -0.599
-    orientation_w: 0.801
-action_motion_groups:
-  ACT_CIRCLE_AROUND: approach_stop
-  ACT_SCRATCH_BED_OR_GROUND: approach_stop
-  ACT_STRETCH_BODY: approach_stop
-  ACT_YAWN: turn_right_4s
-  ACT_SPLoot_LIE_DOWN: approach_stop
-  ACT_LICK_FUR_OR_PAWS: approach_stop
-  ACT_SLEEP_CURLED_UP: strafe_left_turn_right
-  ACT_SLEEP_ON_STOMACH: strafe_left_turn_right
-  ACT_SLEEP_ON_SIDE_CURLED_UP: strafe_left_turn_right
-  ACT_SLEEP_ON_SIDE: strafe_left_turn_right
-  ACT_SLEEP_ON_BACK: strafe_left_turn_right
-  ACT_FLIP_BODY: stop
-  ACT_WHINE_SOFTLY: stop
-  ACT_TWITCH_OR_KICK_LEGS: stop
-  ACT_GETUP_CRAWL: backward_1s
-  ACT_GETUP_ROLL: backward_1s
-  ACT_GETUP_BOUNCE: backward_1s
-  ACT_GETUP_STRETCH: backward_1s
-  ACT_GETUP_SIT: backward_1s
-  ACT_SLOW_DOWN_IN_RESPONSE_TO_OWNER: turn_right_2s
-  ACT_RETURN_TO_DOG_BED_FOR_CHARGING: turn_right_2s
-  ACT_LICK_PAWS_OR_FUR: strafe_osc_2s
-  ACT_RUB_BODY_AGAINST_OBJECT: strafe_osc_2s
-  ACT_PAW_AT_MUZZLE: strafe_osc_2s
-  ACT_SHAKE_OFF_WATER: strafe_osc_2s
-  ACT_SCRATCH_EAR_WITH_HIND_LEG: strafe_osc_2s
-  ACT_LOWER_HEAD_AND_APPROACH_BOWL: approach_stop
-  ACT_LICK_FOOD: forward_left_2s
-  ACT_CHEW_OR_CARRY_FOOD: forward_left_2s
-  ACT_SCRATCH_FOOD: forward_left_2s
-  ACT_PAUSE_AND_LOOK_AT_OWNER: backward_right_2s
-  ACT_CHANGE_POSTURE: backward_right_2s
-  ACT_BURP: backward_right_2s
-  ACT_LICK_LIPS_OR_NOSE: forward_backward_2s
-  ACT_SHAKE_HEAD: forward_backward_2s
-  ACT_WALK_AWAY_OR_LIE_DOWN: forward_backward_2s
-  ACT_SNIFF_GROUND_FOR_CRUMBS: forward_backward_2s
-  ACT_LICK_AND_SWALLOW: forward_left_2s
-  ACT_SNIFF_GROUND_FOR_CRUMBS_AND_LEAVE: backward_right_2s
-  ACT_LICK_LIPS_OR_NOSE_AND_LEAVE: backward_right_2s
-  ACT_CARRY_BOWL_AND_FOLLOW_OWNER: forward_left_2s
-  ACT_PAW_AT_BOWL_FOR_FOOD: forward_left_2s
-  ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD: forward_left_2s
-  ACT_PAW_AT_BOWL_AND_WAIT_FOR_FOOD: forward_left_2s
-  ACT_SNIFF_BOWL_RIM_AND_WAIT_FOR_FOOD: forward_left_2s
-  ACT_WHINE_AND_WAIT_FOR_FOOD: forward_left_2s
-  ACT_VISUALLY_TRACK_FOOD_IN_HAND: forward_turn_osc_3s
-  ACT_CIRCLE_AROUND_OWNER: forward_turn_osc_3s
-  ACT_STAND_UP_AND_PAW_AT_OWNER_LEG: forward_turn_osc_3s
-  ACT_SPIN_IN_PLACE: forward_turn_osc_3s
-  ACT_SNIFF_AND_CIRCLE_AT_TOILET_SPOT: approach_stop
-  ACT_SQUAT_AND_ELIMINATE: turn_left_2s
-  ACT_SCRATCH_SOIL_OR_GROUND: turn_right_2s
-  ACT_SNIFF_EXCREMENT: turn_right_2s
-  ACT_WALK_AWAY_OR_SHAKE_HEAD: turn_right_2s
-  ACT_RETURN_TO_CHARGER: turn_right_2s
-  ACT_BARK_AND_LIE_DOWN_IF_NO_CHARGER: turn_right_2s
-# Behaviors that navigate to a random point before executing their stages.
-# Excludes internal-need waypoints A–E (sleep, charging, food, toilet, cleaning).
+    x: -4.039
+    y: 2.627
+    orientation_z: -0.421
+    orientation_w: 0.907
+stage_actions:
+  # Platform backends execute these units after routed navigation stages.
+  - ACT_NAV_GO_HOME
+  - ACT_CIRCLE_AROUND
+  - ACT_SCRATCH_BED_OR_GROUND
+  - ACT_STRETCH_BODY
+  - ACT_YAWN
+  - ACT_SPLoot_LIE_DOWN
+  - ACT_LICK_FUR_OR_PAWS
+  - ACT_SLEEP_CURLED_UP
+  - ACT_SLEEP_ON_STOMACH
+  - ACT_SLEEP_ON_SIDE_CURLED_UP
+  - ACT_SLEEP_ON_SIDE
+  - ACT_SLEEP_ON_BACK
+  - ACT_FLIP_BODY
+  - ACT_WHINE_SOFTLY
+  - ACT_TWITCH_OR_KICK_LEGS
+  - ACT_GETUP_CRAWL
+  - ACT_GETUP_ROLL
+  - ACT_GETUP_BOUNCE
+  - ACT_GETUP_STRETCH
+  - ACT_GETUP_SIT
+  - ACT_SLOW_DOWN_IN_RESPONSE_TO_OWNER
+  - ACT_RETURN_TO_DOG_BED_FOR_CHARGING
+  - ACT_LICK_PAWS_OR_FUR
+  - ACT_RUB_BODY_AGAINST_OBJECT
+  - ACT_PAW_AT_MUZZLE
+  - ACT_SHAKE_OFF_WATER
+  - ACT_SCRATCH_EAR_WITH_HIND_LEG
+  - ACT_RAISE_HEAD
+  - ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD
+  - ACT_TWIST_WAIST_LEFT_RIGHT
+  - ACT_SNIFF_AND_CIRCLE_AT_TOILET_SPOT
+  - ACT_SQUAT_AND_ELIMINATE
+  - ACT_SCRATCH_SOIL_OR_GROUND
+  - ACT_SNIFF_EXCREMENT
+  - ACT_WALK_AWAY_OR_SHAKE_HEAD
+  - ACT_RETURN_TO_CHARGER
+  - ACT_BARK_AND_LIE_DOWN_IF_NO_CHARGER
+  - ACT_BASIC_LIE_DOWN
+  - ACT_BASIC_STAND
+# Behaviors that request a server-generated random point before their stages.
 random_navigation_behaviors:
-  - expressCalmWithHuman
+  - walk_to_random_point
+  - go_out_to_play
   - expressCalmAlone
-  - expressJoyWithHuman
   - expressJoyAlone
-  - expressCuriosityWithHuman
   - expressCuriosityAlone
-  - expressExcitementWithHuman
   - expressExcitementAlone
-  - expressAnxietyWithHuman
   - expressAnxietyAlone
-  - expressFearWithHuman
   - expressFearAlone
 
-# Navigable-area polygon for random pose generation (map frame).
-# Points are sampled uniformly inside the polygon using triangle-area weighting.
-random_navigation_region:
-  polygon:
-    - [-0.215, -0.651]
-    - [-3.627, -1.788]
-    - [-4.682, 3.105]
-    - [-1.334, 4.416]
-  rule:
-    generate_random_goal_inside_polygon: true
-  # Shorter timeout for random navigation within the small polygon.
-  # Falls back to result_timeout_sec when not set.
-  result_timeout_sec: 45.0
+# Reserved waypoint_nav alias for its live-map random target.  K is not a
+# waypoint card and must not appear in ~/.ros/waypoints.yaml.
+random_navigation_place: K
 
-# Fixed waypoints to exclude from random generation.
-random_navigation_exclude_waypoints:
+# TEMPORARY OVERRIDE — empty this list to restore the stock behaviour.
+# While non-empty, random-navigation behaviors no longer send the reserved K
+# target: one entry is picked at random per navigation and resolved through
+# the same waypoint_nav ``places`` mapping the fixed routes use, so every
+# "random" walk lands on one of the known fixed points instead of a
+# server-generated target.  Entries are waypoint IDs from ``waypoints`` above.
+random_navigation_fixed_pool:
   - A
   - B
   - C
   - D
   - E
 
+# Per-task upper bound for reaching the server-generated random point.
+random_navigation_result_timeout_sec: 45.0
+
+# Per-behavior probability that an express*Alone behavior stays in place
+# (skips the random-point navigation) instead of walking around.  Values in
+# [0, 1]: 0.0 always navigates, 1.0 always stays in place.  Only applies to
+# the emotion-expression Alone behaviors; walk_to_random_point / go_out_to_play
+# are navigation commands and always navigate.
+random_navigation_in_place_probability:
+  expressCalmAlone: 0.5
+  expressJoyAlone: 0.5
+  expressCuriosityAlone: 0.5
+  expressExcitementAlone: 0.5
+  expressAnxietyAlone: 0.5
+  expressFearAlone: 0.5
+
 behavior_routes:
+  go_home:
+    waypoint: A
+    stages:
+    - navigation
   sleepOnSide:
     waypoint: A
     stages:
+    - circle
     - prepare
     - sleep_pose
     - sleeping
@@ -141,6 +162,7 @@ behavior_routes:
   sleepNow:
     waypoint: A
     stages:
+    - circle
     - prepare
     - sleep_pose
     - sleeping
@@ -153,37 +175,61 @@ behavior_routes:
     waypoint: B
     stages:
     - recharge
+  # 进食的五个行为共用同一套到达点位后的仪式 (2026-09-18 定版):
+  # 低头 → 抬头 → 趴下 → 站立 → 再低头 → 左右扭腰.  inspectDogFood 的
+  # target_approach 阶段不在这里列出: 导航本身就是它的「到达点位」.
   eatNormally:
     waypoint: C
     stages:
-    - prepare
-    - eating
-    - interaction
-    - exit
+    - lower_head
+    - head_up
+    - lie_down
+    - stand_up
+    - lower_head_again
+    - waist_twist
   eatExcitedly:
     waypoint: C
     stages:
-    - prepare
-    - eating
-    - exit
+    - lower_head
+    - head_up
+    - lie_down
+    - stand_up
+    - lower_head_again
+    - waist_twist
   seekFood:
     waypoint: C
     stages:
-    - seek_food
+    - lower_head
+    - head_up
+    - lie_down
+    - stand_up
+    - lower_head_again
+    - waist_twist
   seekFoodUrgently:
     waypoint: C
     stages:
-    - seek_food
+    - lower_head
+    - head_up
+    - lie_down
+    - stand_up
+    - lower_head_again
+    - waist_twist
   inspectDogFood:
     waypoint: C
     stages:
-    - inspect
+    - lower_head
+    - head_up
+    - lie_down
+    - stand_up
+    - lower_head_again
+    - waist_twist
   barkShortAlert:
     waypoint: D
     stages:
-    - prepare
+    - circle
     - action
     - exit
+    - head_up
   lickPaws:
     waypoint: E
     stages:

@@ -104,6 +104,18 @@ class StageExecutor:
 
         # ── Select candidate(s) ───────────────────────────────────────
         candidates = self._get_candidates(stage_config)
+        available_candidates = [
+            candidate
+            for candidate in candidates
+            if self._controller_candidate_available(candidate, ctx)
+        ]
+        # Preserve the existing precise controller error for a stage whose
+        # entire candidate set is unavailable.  When at least one platform
+        # implementation exists, exclude unavailable alternatives before the
+        # random selection so Go2 PRAISE/SCOLD cannot choose a unit without
+        # a controller on the selected chassis.
+        if available_candidates:
+            candidates = available_candidates
 
         if policy in ("fixed", "sequence"):
             chosen = candidates  # all candidates in order
@@ -124,11 +136,31 @@ class StageExecutor:
             for unit_cfg in chosen:
                 result = self._execute_unit(unit_cfg, ctx)
                 if not result and required and failure_policy != "skip_stage":
-                    return StageResult(stage_id, False, unit_cfg.get("unit_id", ""), "unit failed")
+                    return StageResult(
+                        stage_id,
+                        False,
+                        unit_cfg.get("unit_id", ""),
+                        str(
+                            ctx.metadata.get(
+                                "unit_failure_reason",
+                                "unit failed",
+                            )
+                        ),
+                    )
         else:
             result = self._execute_unit(chosen, ctx)
             if not result and required and failure_policy != "skip_stage":
-                return StageResult(stage_id, False, chosen.get("unit_id", ""), "unit failed")
+                return StageResult(
+                    stage_id,
+                    False,
+                    chosen.get("unit_id", ""),
+                    str(
+                        ctx.metadata.get(
+                            "unit_failure_reason",
+                            "unit failed",
+                        )
+                    ),
+                )
             if not result:
                 return StageResult(stage_id, True, chosen.get("unit_id", ""), "optional unit failed, stage skipped")
 
@@ -142,9 +174,12 @@ class StageExecutor:
         if ctx.motion_state != "stationary":
             return
 
-        # Runtime installs both adapters, but behavior_mobility wraps the same
-        # AGV adapter. Prefer the direct adapter to avoid duplicate stop bursts.
-        adapter = self._controller_adapters.get("agv")
+        # Runtime installs one selected chassis backend; behavior_mobility
+        # wraps that same backend. Prefer the direct route to avoid duplicate
+        # stop bursts.
+        adapter = self._controller_adapters.get("lite3")
+        if adapter is None:
+            adapter = self._controller_adapters.get("go2")
         if adapter is None:
             adapter = self._controller_adapters.get("behavior_mobility")
         hold_position = getattr(adapter, "hold_position", None)
@@ -161,6 +196,45 @@ class StageExecutor:
             elif isinstance(entry, dict):
                 result.append(dict(entry))
         return result
+
+    def _controller_candidate_available(
+        self,
+        candidate: dict[str, Any],
+        ctx: ExecutionContext,
+    ) -> bool:
+        """Return whether this runtime has a controller for the candidate."""
+        unit_id = str(candidate.get("unit_id", ""))
+        route = self._controller_routes.get(
+            unit_id,
+            self._controller_routes.get("_default", "mock"),
+        )
+        if route in (None, "", "mock"):
+            return True
+        adapter = self._controller_adapters.get(route)
+        if adapter is None:
+            mobility_adapter = self._controller_adapters.get(
+                "behavior_mobility"
+            )
+            if (
+                mobility_adapter is not None
+                and mobility_adapter.handles(
+                    ctx.resolved_behavior_name,
+                    str(ctx.current_stage or ""),
+                )
+            ):
+                adapter = mobility_adapter
+        if adapter is None:
+            return False
+        can_execute = getattr(adapter, "can_execute", None)
+        if callable(can_execute):
+            return bool(can_execute(unit_id))
+        unit_type = self._catalog.get(unit_id, {}).get(
+            "unit_type", "atomic_action"
+        )
+        required_method = (
+            "execute_task" if unit_type == "task" else "execute_step"
+        )
+        return callable(getattr(adapter, required_method, None))
 
     def _select_best(
         self,
@@ -233,6 +307,8 @@ class StageExecutor:
         """Execute a single unit and update context."""
         unit_id = unit_config.get("unit_id", "unknown")
         ctx.current_unit = unit_id
+        ctx.metadata.pop("unit_failure_state", None)
+        ctx.metadata.pop("unit_failure_reason", None)
 
         # Get unit metadata from catalog
         meta = self._catalog.get(unit_id, {})
@@ -256,9 +332,39 @@ class StageExecutor:
             ):
                 adapter = mobility_adapter
 
+        # Motion/safety-critical tasks must never fall through to the generic
+        # TaskExecutor mock lifecycle.  A missing or stale controller route
+        # otherwise sleeps briefly and reports success without issuing any
+        # physical command, allowing the following expression Stage to run.
+        if bool(merged.get("requires_controller", False)) and adapter is None:
+            message = f"controller_required:{route or 'unconfigured'}"
+            logger.error(
+                "Unit %s requires a real controller; route=%s is unavailable",
+                unit_id,
+                route,
+            )
+            ctx.metadata["unit_failure_reason"] = message
+            ctx.metadata["unit_failure_state"] = "controller_error"
+            return False
+
+        if adapter is None and route not in ("", "mock", None):
+            message = f"controller_unavailable:{route}"
+            logger.error(
+                "Unit %s cannot run because controller %s is unavailable",
+                unit_id,
+                route,
+            )
+            ctx.metadata["unit_failure_reason"] = message
+            ctx.metadata["unit_failure_state"] = "controller_error"
+            return False
+
         # A routed hardware adapter implements the complete ACT_* unit, even
         # when the semantic catalog classifies it as composite_action or task.
-        executor_type = "atomic_action" if adapter is not None else unit_type
+        executor_type = (
+            "task"
+            if unit_type == "task"
+            else "atomic_action" if adapter is not None else unit_type
+        )
         executor = create_executor(
             executor_type,
             interrupt_manager=self._interrupt,
@@ -268,13 +374,30 @@ class StageExecutor:
 
         if result.state == UnitState.SUCCESS:
             ctx.executed_units.append(unit_id)
-            # Update posture
+            # Hardware-backed proxies must report the posture they actually
+            # observed.  Applying the biological ACT_* catalog transition to
+            # a Lite3 HOLD proxy would otherwise invent sitting/lying state.
             to_posture = merged.get("to_posture")
+            if route == "lite3":
+                lite3_result = ctx.metadata.get("lite3_action")
+                if (
+                    isinstance(lite3_result, dict)
+                    and lite3_result.get("requested_act") == unit_id
+                ):
+                    physical_posture = lite3_result.get("physical_posture")
+                    if isinstance(physical_posture, str) and physical_posture:
+                        to_posture = physical_posture
+                    elif lite3_result.get("fidelity") == "proxy":
+                        to_posture = ""
             self._posture.apply_unit_to_posture(to_posture)
             return True
         elif result.state == UnitState.CANCELED:
+            ctx.metadata["unit_failure_state"] = "canceled"
+            ctx.metadata["unit_failure_reason"] = result.message
             logger.info("Unit %s canceled", unit_id)
             return False
         else:
+            ctx.metadata["unit_failure_state"] = result.state.value
+            ctx.metadata["unit_failure_reason"] = result.message
             logger.warning("Unit %s failed: %s (%s)", unit_id, result.state.value, result.message)
             return False

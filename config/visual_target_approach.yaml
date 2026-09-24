@@ -1,0 +1,215 @@
+enabled: true
+
+# Closed-loop controller limits. Human social behaviors may explicitly use the
+# detector bbox height as a conservative visual-servo proxy. Animal and object
+# behaviors retain metric depth because their physical sizes vary too much.
+publish_rate_hz: 10.0
+min_confidence: 0.50
+visual_timeout_sec: 0.8
+# Allow the on-demand RKNN stream to publish its first frame after an idle
+# period. The chassis remains stopped throughout acquisition.
+acquire_timeout_sec: 5.0
+lost_timeout_sec: 2.0
+approach_timeout_sec: 20.0
+minimum_stop_distance_m: 0.50
+minimum_safe_distance_m: 0.45
+distance_deadband_m: 0.12
+# Once arrival confirmation starts, require the target to move a further
+# 0.10 m away before motion can resume. This prevents threshold chatter.
+distance_hysteresis_m: 0.10
+arrival_hold_sec: 0.4
+linear_gain: 1.00
+angular_gain: 0.80
+max_linear_x: 0.35
+max_angular_z: 0.30
+max_linear_accel: 0.50
+max_angular_accel: 0.30
+heading_deadband: 0.06
+max_heading_error: 0.25
+allow_bbox_distance_fallback: true
+# Human bbox mode reaches the interaction zone only after the selected body
+# occupies about 76% of image height (0.80 target minus 0.04 deadband).
+bbox_target_height: 0.80
+bbox_height_deadband: 0.04
+# A stopped bbox target must shrink clearly beyond the arrival threshold before
+# approach resumes. After any invalid snapshot, three new valid frames are
+# required before Go2 receives another Move request.
+bbox_height_hysteresis: 0.03
+reacquire_min_consecutive_frames: 3
+
+# Animal/object motion must own a continuous Vision stream. A one-shot
+# detect_objects response is suitable for Tree routing but expires before a
+# closed-loop approach can finish.
+object_detection_stream:
+  required: true
+  service_name: /perception/vision/task
+  topic: /perception/vision/object_detections
+  rate_hz: 4.0
+  confidence: 0.35
+  service_timeout_sec: 1.0
+  lease_margin_sec: 2.0
+
+# Each listed behavior is allowed to execute ACT_APPROACH_VISUAL_TARGET only
+# for the declared target type and stopping distance. testAnimalBoundary stays
+# farther away than greeting/play; object inspection uses a closer but guarded
+# distance. exploreRoom is intentionally absent because it has no target.
+behavior_policies:
+  seekHumanInteraction:
+    target_type: human
+    distance_mode: bbox_height
+    desired_distance_m: 1.20
+    minimum_safe_distance_m: 0.80
+    target_max_age_ms: 500.0
+    target_lost_timeout_sec: 2.0
+  seekInteraction:
+    target_type: human
+    distance_mode: bbox_height
+    desired_distance_m: 1.20
+    minimum_safe_distance_m: 0.80
+    target_max_age_ms: 500.0
+    target_lost_timeout_sec: 2.0
+  inviteHumanToPlay:
+    target_type: human
+    distance_mode: bbox_height
+    desired_distance_m: 1.20
+    minimum_safe_distance_m: 0.80
+    target_max_age_ms: 500.0
+    target_lost_timeout_sec: 2.0
+  expressCalmWithHuman: &human_emotion_policy
+    target_type: human
+    distance_mode: bbox_height
+    desired_distance_m: 1.20
+    minimum_safe_distance_m: 0.80
+    target_max_age_ms: 500.0
+    target_lost_timeout_sec: 2.0
+  expressJoyWithHuman: *human_emotion_policy
+  expressCuriosityWithHuman: *human_emotion_policy
+  expressExcitementWithHuman: *human_emotion_policy
+  expressAnxietyWithHuman: *human_emotion_policy
+  expressFearWithHuman: *human_emotion_policy
+  unhappy:
+    target_type: human
+    required_identity: owner
+    distance_mode: bbox_height
+    desired_distance_m: 0.95
+    minimum_safe_distance_m: 0.80
+    target_max_age_ms: 500.0
+    target_lost_timeout_sec: 2.0
+    max_linear_x: 0.30
+    linear_gain: 0.45
+    max_linear_accel: 0.12
+    bbox_target_height: 0.82
+    bbox_height_deadband: 0.03
+    arrival_hold_sec: 1.5
+  miss_owner:
+    target_type: human
+    required_identity: owner
+    distance_mode: bbox_height
+    desired_distance_m: 0.90
+    minimum_safe_distance_m: 0.80
+    target_max_age_ms: 500.0
+    target_lost_timeout_sec: 2.0
+    max_linear_x: 0.30
+    linear_gain: 1.00
+    max_linear_accel: 0.50
+    bbox_target_height: 0.84
+    bbox_height_deadband: 0.03
+    arrival_hold_sec: 0.3
+  farewell_leave:
+    target_type: human
+    required_identity: owner
+    distance_mode: bbox_height
+    desired_distance_m: 1.10
+    minimum_safe_distance_m: 0.80
+    target_max_age_ms: 500.0
+    target_lost_timeout_sec: 1.0
+    max_linear_x: 0.30
+    linear_gain: 0.80
+    max_linear_accel: 0.30
+    bbox_target_height: 0.76
+    bbox_height_deadband: 0.04
+    # While this hold is active, a departing owner that moves outside the
+    # target zone causes the same immutable visual track to be followed again.
+    arrival_hold_sec: 3.0
+  testAnimalBoundary:
+    target_type: animal
+    # Keep a visibly cautious boundary, but do not declare arrival while the
+    # animal is still more than about 1.62 m away (including deadband).
+    desired_distance_m: 1.50
+    minimum_safe_distance_m: 1.00
+    min_confidence: 0.40
+    target_max_age_ms: 500.0
+    target_lost_timeout_sec: 1.8
+  greetAnimal:
+    target_type: animal
+    desired_distance_m: 1.20
+    minimum_safe_distance_m: 0.80
+    min_confidence: 0.40
+    target_max_age_ms: 500.0
+    target_lost_timeout_sec: 1.8
+  inviteAnimalToPlay:
+    target_type: animal
+    desired_distance_m: 1.20
+    minimum_safe_distance_m: 0.80
+    min_confidence: 0.40
+    target_max_age_ms: 500.0
+    target_lost_timeout_sec: 1.8
+  inspectObject: &object_policy
+    target_type: object
+    desired_distance_m: 0.90
+    minimum_safe_distance_m: 0.55
+    min_confidence: 0.35
+    target_max_age_ms: 500.0
+    target_lost_timeout_sec: 1.8
+  inspectFamiliarPlayItem: *object_policy
+  inspectTrashCan: *object_policy
+  inspectDeliveryBox: *object_policy
+  inspectTissuePaper: *object_policy
+  inspectDoor: *object_policy
+  inspectDogFood: *object_policy
+
+# Legacy visual-controller policy fixtures for owner commands. The active
+# Go2/Lite3 routes use person_nav_approach after Action binds a fresh human track.
+# Keep these for compatibility with standalone visual-controller tests.
+go2_owner_approach_policies:
+  come_to_owner: &go2_owner_approach
+    target_type: human
+    required_identity: owner
+    distance_mode: bbox_height
+    desired_distance_m: 1.00
+    minimum_safe_distance_m: 0.80
+    target_max_age_ms: 500.0
+    target_lost_timeout_sec: 1.5
+    max_linear_x: 0.30
+    max_linear_accel: 0.25
+    bbox_target_height: 0.80
+    bbox_height_deadband: 0.04
+    arrival_hold_sec: 0.5
+  return_to_owner: *go2_owner_approach
+  approach_owner:
+    <<: *go2_owner_approach
+    desired_distance_m: 0.90
+    bbox_target_height: 0.84
+    max_linear_x: 0.30
+
+# Legacy Lite3 visual-controller policy fixtures; active owner commands use
+# the same person_nav_approach route as Go2.
+lite3_owner_approach_policies:
+  come_to_owner: &lite3_owner_approach
+    target_type: human
+    required_identity: owner
+    distance_mode: bbox_height
+    desired_distance_m: 1.00
+    minimum_safe_distance_m: 0.80
+    target_max_age_ms: 500.0
+    target_lost_timeout_sec: 1.5
+    max_linear_x: 0.15
+    max_linear_accel: 0.15
+    bbox_target_height: 0.80
+    bbox_height_deadband: 0.04
+    arrival_hold_sec: 0.5
+  return_to_owner: *lite3_owner_approach
+  approach_owner:
+    <<: *lite3_owner_approach
+    desired_distance_m: 0.90
+    bbox_target_height: 0.84
