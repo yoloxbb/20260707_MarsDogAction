@@ -59,6 +59,23 @@ def test_atomic_action_cannot_report_success_after_goal_deadline() -> None:
     assert result.message == "behavior_goal_timeout"
 
 
+def test_fixed_native_wait_still_obeys_outer_goal_budget() -> None:
+    class CapturingAdapter:
+        duration = None
+
+        def execute_step(self, config, ctx, duration):
+            self.duration = duration
+            return True
+
+    adapter = CapturingAdapter()
+    ctx = _context(.05)
+    ctx.duration_scale = ctx.speed_scale = .1
+    assert AtomicActionExecutor(adapter=adapter).execute(
+        {"unit_id": "ACT_TEST", "timeout_sec": 10., "scale_duration": False}, ctx,
+    ).state == UnitState.SUCCESS
+    assert 0 < adapter.duration <= .05
+
+
 def test_task_unit_result_success_cannot_bypass_goal_deadline() -> None:
     class SlowTaskAdapter:
         def execute_task(self, unit_config, ctx, timeout):

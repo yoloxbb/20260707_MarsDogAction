@@ -11,9 +11,9 @@
 运行时唯一行为来源是
 [config/behavior_tree_actions.yaml](config/behavior_tree_actions.yaml)：
 
-- 73 个可执行行为；
-- 269 条候选动作记录；
-- 182 个唯一 `ACT_*`；
+- 77 个可执行行为；
+- 312 条候选动作记录；
+- 191 个唯一 `ACT_*`；
 - 行为名和动作名均大小写敏感；
 - 不加载旧行为模板；
 - 不解析旧行为 alias；
@@ -26,6 +26,7 @@ sit_down       -> ACT_BASIC_SIT
 emergency_stop -> ACT_SYSTEM_EMERGENCY_STOP
 respond_person_fall -> ACT_PERCEPTION_RESPOND_PERSON_FALL
 respond_stop_gesture -> ACT_PERCEPTION_RESPOND_STOP_GESTURE
+respond_wave_gesture -> ACT_APPROACH_VISUAL_TARGET -> ACT_TWIST_WAIST_LEFT_RIGHT
 ```
 
 `defecate`、`go_back`、`expressJoy`、`wagTailFast`、
@@ -43,12 +44,12 @@ GoalParser
         │
         ▼
 BehaviorResolver
-  精确校验 behavior_name 是否属于 73 个直接行为
+  精确校验 behavior_name 是否属于 77 个直接行为
         │
         ▼
 ConfigLoader
   从 behavior_tree_actions.yaml 获取有序 Stage
-  校验 action_catalog.yaml 恰好包含表引用的 182 个 ACT_*
+  校验 action_catalog.yaml 恰好包含表引用的 191 个 ACT_*
         │
         ▼
 StageExecutor
@@ -90,7 +91,7 @@ export ROS_LOCALHOST_ONLY=0
 ```text
 config/
 ├── behavior_tree_actions.yaml         # 唯一行为定义
-├── action_catalog.yaml                # 新表引用的 182 个动作元数据
+├── action_catalog.yaml                # 新表引用的 191 个动作元数据
 ├── go2_sport.yaml                     # 独立 Go2 SportMode 动作与路由覆盖
 ├── lite3_actions.yaml                 # Lite3 动作计划与路由覆盖
 ├── navigation_waypoints.yaml          # YAML 地点名、随机目标 K 与行为/Stage 映射
@@ -187,8 +188,13 @@ ros2 launch marsdog_action_executor action_executor.launch.py \
   navigation_enabled:=true
 ```
 
-`chassis_type` 只接受 `go2` 或 `lite3`。73 个行为引用的 182 个动作均有明确 Go2 路径：171 个 SportMode 映射，
-其余使用 Nav2、UWB、视觉或唤醒专用适配器；`quiet` 是无身体动作的音频策略。
+`chassis_type` 只接受 `go2` 或 `lite3`。191 个动作逐项分类：179 个原生、组合或明确安全代理，
+其余 12 个保留独立控制器或音频策略路由。原先不支持的 85 个动作按用户授权配置为 Go2 安全替代，
+实际表达写入 `fidelity=proxy` 和描述，不宣称完成搬运、接触等原任务；禁用翻腾/跳扑接口。
+睡前三圈使用 `/spin` 的 `6π` Goal，只在真实 Result 成功后进入趴下阶段；伸懒腰与舞蹈使用 Stretch、Dance1。
+成功行为链末尾恢复 BalanceStand，显式趴下/坐下/保持等命令保留原语义。
+内置 `/cmd_vel` 桥接覆盖外部导航的起身准备，启用时停止独立 `twist_bridge`。
+完整逐项表见 [Go2 动作核对表](docs/GO2_ACTION_AUDIT.csv)。
 当前 Go2 `follow_owner` 使用外接 FTDI UWB 与 `go2_uwb_local_follow` 进程链路；
 Lite3 使用 `/go2/follow_uwb` Action 和 `/go2/set_behavior` Service。
 完整映射、视觉约束和真机验收步骤见
@@ -213,16 +219,16 @@ offset/sign 转成 `base_link` 相对 yaw 后调用 `/spin`。角度标定和联
 
 Social / Exploration 中有明确人、动物或物体目标的 13 个行为、六类普通
 `express*WithHuman`，以及 `unhappy`、`miss_owner`、`farewell_leave`，现在都采用两阶段
-执行：先由 `ACT_APPROACH_VISUAL_TARGET -> visual_target_approach` 锁定 Tree
-选中的目标并闭环接近，成功停车后才执行原来的互动/检查动作。停止距离由
-`config/visual_target_approach.yaml` 按行为配置。三个主人定制行为还分别覆盖
-接近速度、人体框贴近程度和到达保持时间：`unhappy` 缓慢靠近并安静停留，
-`miss_owner` 较快贴近后执行兴奋摆动，`farewell_leave` 在 3 秒观察窗口内若主人
-继续离开会恢复跟随同一视觉 Track。正式运行只接受
-`range_valid=true + distance_m`；缺目标、错类型、目标歧义、epoch 不匹配、
-距离无效、丢失、取消或超时都会清零底盘并终止，后续动作不会继续。视觉短暂
-失效后需连续 3 个新有效快照才恢复移动；保持停止期间会合并重复停车请求，并用
-距离/框高迟滞抑制阈值附近的反复启停。
+执行：先由 `ACT_APPROACH_VISUAL_TARGET -> visual_nav_approach` 锁定 Tree
+选中的目标，通过 Vision `locate_target_once` 冻结原图检测框并生成地图目标，
+再由 Action 发送一次 Nav2 Goal。路径与避障由 Nav2 管理；真实 Result 成功且
+底盘收稳后才执行互动/检查动作。地图停止距离由 `config/visual_target_approach.yaml`
+按行为配置，人体至少 1.5 m；三个主人定制行为仍要求 `identity=owner`。
+缺目标、错类型、目标歧义、epoch 不匹配、定位失败、取消或超时都会终止接近，
+后续动作不会继续；Nav2 终态不明时保留 Goal 和恢复锁。
+定位成功后不会再追随移动目标或按人体框高度恢复接近。
+`inspectDogFood` 接近实际狗粮目标后执行六步仪式，进食行为仍导航到厨房 C。
+详细契约见 [目标地图导航接近](docs/VISUAL_TARGET_APPROACH.md)。
 无具体目标的 `exploreRoom` 仍执行房间探索，不进入该接近阶段。
 Social 目标身份为 `unknown` 时，绑定 Vision 已确定选择的新鲜 `active_target`
 稳定 Track，不从多人候选中随机选人；active target 无效时继续安全拒绝。
@@ -232,6 +238,10 @@ Social 目标身份为 `unknown` 时，绑定 Vision 已确定选择的新鲜 `a
 `express*Alone` 在启用导航后按配置概率保持原地，或将保留目标 `K`
 交给 `waypoint_nav` 生成实时随机点，到达后再执行表达 Stage，要求
 所选底盘的 `*_enabled:=true` 和 `navigation_enabled:=true`。
+
+随机点到达后新增 8 套短动作组合；“走走”“出去玩”各增加到点表达 Stage，六类
+Alone 情绪扩充候选池。Tree 为这些行为提供 70 秒总预算，随机导航仍最多 45 秒。
+具体动作与平台执行边界见 [随机到点表现](docs/RANDOM_ARRIVAL_EXPRESSIONS.md)。
 
 语音会话 WAITING 阶段使用六个 `express*InPlaceWithHuman`。这些行为必须携带
 `"mobility_policy": "in_place"`，计划会在导航、声音和 Controller 调用前完整校验。
@@ -282,7 +292,7 @@ Go2 的身体动作走独立 SportMode 映射，Lite3 走对应动作计划。�
 在视觉接近完成后均不再盲目前进，且最终发送停止。当前自动化测试不等于四足
 姿态、步态稳定性或真机安全验收。
 
-Lite3 模式覆盖全部 182 个 `ACT_*`：169 个进入 Lite3 backend，13 个保留专用
+Lite3 模式覆盖全部 191 个 `ACT_*`：177 个进入 Lite3 backend，14 个保留专用
 闭环控制器（其中 2 个是永久拒绝的 `ACT_BONE_DANCE` / `ACT_JUMP_PAW`）。Lite3
 原生的打招呼和已确认不影响机背载荷的扭身体动作分别用于趴下社交和站立社交
 fallback；其余不具备的生物动作和物体操作统一映射到
@@ -336,9 +346,14 @@ ros2 action send_goal --feedback \
 - [Lite3 ROS2 动作集成说明](docs/LITE3_ROS2_INTEGRATION.md)
 - [waypoint_nav 点位适配说明](docs/NAV2_WAYPOINT_INTEGRATION.md)
 - [唤醒声源朝向说明](docs/WAKE_ORIENTATION_INTEGRATION.md)
+- [唤醒后的随机表现与重复唤醒](docs/WAKE_RESPONSE.md)
 - [视觉目标接近说明](docs/VISUAL_TARGET_APPROACH.md)
 - [行为与动作映射说明](docs/BEHAVIOR_ACTION_MAP.md)
 - [行为树动作契约](docs/BEHAVIOR_TREE_ACTION_CONTRACT.md)
 - [仿真页面接入说明](docs/SIMULATION_PAGE_INTEGRATION.md)
+
+语音“这是啥？” / “这是什么？”已接入独立行为
+[`inspect_toy`](docs/INSPECT_TOY.md)：持续检测玩具、锁定目标并导航靠近，确认到达后
+执行低头抬头、左右观察和身体伸展三段完整组合。
 
 Lite3 新增 [`play_alone`：UWB 随机点后随机姿态动作](docs/PLAY_ALONE_LITE3.md)。

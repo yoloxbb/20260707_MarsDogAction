@@ -126,6 +126,10 @@ def generate_launch_description():
                 ),
             ),
             DeclareLaunchArgument(
+                "uwb_roam_execution_mode", default_value="legacy",
+                description="Lite3 random target execution: nav2 or legacy",
+            ),
+            DeclareLaunchArgument(
                 "go2_uwb_request_topic",
                 default_value="/api/uwbswitch/request",
                 description="Go2 built-in UTrack request topic",
@@ -498,6 +502,9 @@ def generate_launch_description():
                         "uwb_follow_enabled": ParameterValue(
                             LaunchConfiguration("uwb_follow_enabled"),
                             value_type=bool,
+                        ),
+                        "uwb_roam_execution_mode": ParameterValue(
+                            LaunchConfiguration("uwb_roam_execution_mode"), value_type=str,
                         ),
                         "go2_uwb_request_topic": ParameterValue(
                             LaunchConfiguration("go2_uwb_request_topic"),

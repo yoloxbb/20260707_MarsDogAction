@@ -527,6 +527,40 @@ behaviors:
           - {unit_id: ACT_KNOCK_OVER_OBJECT}
           - {unit_id: ACT_NIBBLE_OBJECT}
 
+  # Explicit voice command: acquire toys without requiring a Tree snapshot.
+  inspect_toy:
+    behavior_name: inspect_toy
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: target_approach
+        order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      - stage_id: look_down_up
+        order: 2
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_ROAM_LOOK_DOWN_UP, timeout_sec: 12.0}
+      - stage_id: scan_head_up
+        order: 3
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_ROAM_SCAN_HEAD_UP, timeout_sec: 12.0}
+      - stage_id: stretch_scan
+        order: 4
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_ROAM_STRETCH_SCAN, timeout_sec: 12.0}
+
   inspectFamiliarPlayItem:
     behavior_name: inspectFamiliarPlayItem
     success_condition: all_required_stages_completed
@@ -538,8 +572,19 @@ behaviors:
         failure_policy: abort
         candidates:
           - {unit_id: ACT_APPROACH_VISUAL_TARGET}
-      - stage_id: inspect
+      # Each candidate is a complete body-expression sequence after arrival.
+      # Keep the original toy interaction afterwards and share the Goal budget.
+      - stage_id: arrival_expression
         order: 2
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_ROAM_LOOK_DOWN_UP, timeout_sec: 12.0}
+          - {unit_id: ACT_ROAM_SCAN_HEAD_UP, timeout_sec: 12.0}
+          - {unit_id: ACT_ROAM_STRETCH_SCAN, timeout_sec: 12.0}
+      - stage_id: inspect
+        order: 3
         selection_policy: random_one
         required: true
         candidates:
@@ -646,10 +691,8 @@ behaviors:
         failure_policy: abort
         candidates:
           - {unit_id: ACT_APPROACH_VISUAL_TARGET}
-      # 到达食盆点位后的固定仪式 (2026-09-18 定版): 低头 → 抬头 → 趴下 → 站立 →
-      # 再低头 → 左右扭腰.  order 1 仍是原来的视觉接近 (target_approach):
-      # 它是「到达点位」本身, 在导航流程里由 behavior_routes 跳过, 但保留给
-      # 非导航路径使用.
+      # Nav2 到达视觉选中的狗粮后，执行固定仪式：低头 → 抬头 → 趴下 →
+      # 站立 → 再低头 → 左右扭腰。此探索行为没有固定厨房导航前置步骤。
       - stage_id: lower_head
         order: 2
         selection_policy: random_one
@@ -715,6 +758,9 @@ behaviors:
         selection_policy: random_one
         required: true
         candidates:
+          - {unit_id: ACT_ROAM_LOOK_DOWN_UP}
+          - {unit_id: ACT_ROAM_STRETCH_SCAN}
+          - {unit_id: ACT_ROAM_LIE_STAND}
           - {unit_id: ACT_GUARD_DOOR}
           - {unit_id: ACT_YAWN}
           - {unit_id: ACT_STRETCH}
@@ -753,6 +799,9 @@ behaviors:
         selection_policy: random_one
         required: true
         candidates:
+          - {unit_id: ACT_ROAM_TWIST_STRETCH}
+          - {unit_id: ACT_ROAM_STRETCH_SCAN}
+          - {unit_id: ACT_ROAM_HEAD_UP_TWIST}
           - {unit_id: ACT_WAG_TAIL}
           - {unit_id: ACT_COMFY_STRETCH}
           - {unit_id: ACT_TROT_BOUNCE}
@@ -785,6 +834,9 @@ behaviors:
         selection_policy: random_one
         required: true
         candidates:
+          - {unit_id: ACT_ROAM_SCAN_HEAD_UP}
+          - {unit_id: ACT_ROAM_LOOK_DOWN_UP}
+          - {unit_id: ACT_ROAM_STRETCH_SCAN}
           - {unit_id: ACT_NON_INTERACT_EXPLORE}
 
   expressExcitementWithHuman:
@@ -819,6 +871,9 @@ behaviors:
         selection_policy: random_one
         required: true
         candidates:
+          - {unit_id: ACT_ROAM_HEAD_UP_TWIST}
+          - {unit_id: ACT_ROAM_TWIST_STRETCH}
+          - {unit_id: ACT_ROAM_SCAN_HEAD_UP}
           - {unit_id: ACT_ZOOMIES}
           - {unit_id: ACT_BONE_DANCE}
           - {unit_id: ACT_BAT_TOY}
@@ -855,6 +910,8 @@ behaviors:
         selection_policy: random_one
         required: true
         candidates:
+          - {unit_id: ACT_ROAM_LOWER_HEAD_PAUSE}
+          - {unit_id: ACT_ROAM_OBSERVE_PAUSE}
           - {unit_id: ACT_HIDE_SHRINK}
           - {unit_id: ACT_PACE}
           - {unit_id: ACT_WHIMPER}
@@ -889,6 +946,8 @@ behaviors:
         selection_policy: random_one
         required: true
         candidates:
+          - {unit_id: ACT_ROAM_LOWER_HEAD_PAUSE}
+          - {unit_id: ACT_ROAM_OBSERVE_PAUSE}
           - {unit_id: ACT_TUCK_TAIL}
           - {unit_id: ACT_COVER_EYES}
           - {unit_id: ACT_BARK_TENSE}
@@ -1039,6 +1098,24 @@ behaviors:
         candidates:
           - {unit_id: ACT_INTERACT_RESPOND_CALL}
 
+  # One random in-place single action or complete hardware gesture group.
+  # This is a separate Goal so its budget does not consume approach time.
+  respond_wake_in_place:
+    behavior_name: respond_wake_in_place
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: expression
+        order: 1
+        selection_policy: random_one
+        required: true
+        candidates:
+          - {unit_id: ACT_RAISE_HEAD}
+          - {unit_id: ACT_TWIST_WAIST_LEFT_RIGHT}
+          - {unit_id: ACT_STRETCH}
+          - {unit_id: ACT_ROAM_LOOK_DOWN_UP}
+          - {unit_id: ACT_ROAM_SCAN_HEAD_UP}
+          - {unit_id: ACT_ROAM_STRETCH_SCAN}
+
   approach_voice_caller:
     behavior_name: approach_voice_caller
     success_condition: all_required_stages_completed
@@ -1049,6 +1126,25 @@ behaviors:
         required: true
         candidates:
           - {unit_id: ACT_INTERACT_APPROACH_VOICE_CALLER}
+
+  respond_wave_gesture:
+    behavior_name: respond_wave_gesture
+    success_condition: all_required_stages_completed
+    stages:
+      - stage_id: target_approach
+        order: 1
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_APPROACH_VISUAL_TARGET}
+      - stage_id: expression
+        order: 2
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_TWIST_WAIST_LEFT_RIGHT}
 
   respond_person_fall:
     behavior_name: respond_person_fall
@@ -1136,6 +1232,16 @@ behaviors:
         required: true
         candidates:
           - {unit_id: ACT_NAV_WALK_RANDOM}
+      - stage_id: arrival_expression
+        order: 2
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_ROAM_LOOK_DOWN_UP}
+          - {unit_id: ACT_ROAM_SCAN_HEAD_UP}
+          - {unit_id: ACT_ROAM_STRETCH_SCAN}
+          - {unit_id: ACT_ROAM_LIE_STAND}
 
   go_out_to_play:
     behavior_name: go_out_to_play
@@ -1147,6 +1253,16 @@ behaviors:
         required: true
         candidates:
           - {unit_id: ACT_NAV_GO_OUT_TO_PLAY}
+      - stage_id: arrival_expression
+        order: 2
+        selection_policy: random_one
+        required: true
+        failure_policy: abort
+        candidates:
+          - {unit_id: ACT_ROAM_TWIST_STRETCH}
+          - {unit_id: ACT_ROAM_HEAD_UP_TWIST}
+          - {unit_id: ACT_ROAM_STRETCH_SCAN}
+          - {unit_id: ACT_ROAM_SCAN_HEAD_UP}
 
   go_home:
     behavior_name: go_home

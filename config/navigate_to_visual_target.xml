@@ -1,0 +1,81 @@
+<!-- 视觉接近专用：选择 visual_goal_checker，保留普通导航的规划、平滑与恢复流程。 -->
+<!--
+  本行为树不做周期重规划。全局路径只在两种时机重新计算：
+    1) 目标变更 —— GlobalUpdatedGoal 检测黑板 {goal}/{goals} 变化；该条件首次 tick
+       必返回 SUCCESS（globally_updated_goal_condition.cpp 的 first_time 分支），
+       因此首次规划也由它保证；
+    2) 恢复行为执行完毕 —— 恢复分支末尾显式调用一次 ComputePathToPose。
+  其余时间机器人始终跟随同一条路径，动态避障完全由 MPPI 局部控制器承担。
+-->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="6" name="NavigateRecovery">
+      <PipelineSequence name="NavigateWithoutPeriodicReplanning">
+        <!-- 原为 <RateController hz="0.5">，每 2 s 无条件重规划一次。
+             改为条件短路：目标未变时 GlobalUpdatedGoal 返回 FAILURE，经 Inverter 变
+             SUCCESS，Fallback 立即成功而不进入规划分支。
+             不再外套 RateController：该条件只是黑板内存比较，按 bt_loop_duration 20 ms
+             评估反而让目标变更响应更快，且规划分支本身已被条件挡住，不会被反复触发。 -->
+        <Fallback name="ReplanOnlyOnGoalChange">
+          <Inverter>
+            <GlobalUpdatedGoal/>
+          </Inverter>
+          <Sequence name="ComputeAndSmoothPath">
+            <!-- GoalUpdater 只把 /goal_update 话题的目标写入 {updated_goal}，不改黑板
+                 {goal}，而触发条件读的是 {goal}，因此话题方式的动态目标更新不再生效
+                 （周期规划时它每 2 s 被喂给规划器一次）。经 action 下发的目标会更新
+                 {goal}，正常触发。 -->
+            <GoalUpdater input_goal="{goal}" output_goal="{updated_goal}">
+              <ComputePathToPose goal="{updated_goal}" path="{path}" planner_id="GridBased"/>
+            </GoalUpdater>
+            <!-- 约束平滑器读全局代价地图，把路径推离膨胀带以求居中；
+                 Ceres 无解或平滑后碰撞时失败，此时 {path} 保持规划器原值，
+                 由 AlwaysSuccess 吞掉失败，避免误触发外层恢复流程。 -->
+            <Fallback name="SmoothPathOrKeepOriginal">
+              <SmoothPath unsmoothed_path="{path}" smoothed_path="{path}" smoother_id="constrained_smoother" max_smoothing_duration="0.6" check_for_collisions="true"/>
+              <AlwaysSuccess/>
+            </Fallback>
+          </Sequence>
+        </Fallback>
+        <FollowPath
+          path="{path}"
+          controller_id="FollowPath"
+          goal_checker_id="visual_goal_checker"/>
+      </PipelineSequence>
+      <ReactiveFallback name="RecoveryFallback">
+        <GoalUpdated/>
+        <!-- 两种恢复动作按失败轮次轮换：先清局部图，再由 BackUpTwzFree 搜索全局图自由方向。 -->
+        <Sequence name="RecoverThenReplan">
+          <RoundRobin name="RecoveryActions">
+            <!-- 只清局部图。全局代价地图刻意不清空：清空后规划器在一张空图上重新规划，
+                 得到的仍是原来那条被堵的路径，而 update_frequency 1.0 Hz 要数秒才能把
+                 障碍重新填回来，这段时间机器人处于无障碍认知的状态。 -->
+            <Sequence name="ClearLocalCostmapAndWait">
+              <ClearEntireCostmap name="ClearLocalCostmap" service_name="local_costmap/clear_entirely_local_costmap"/>
+              <Wait wait_duration="1"/>
+            </Sequence>
+            <!-- backup_dist=0.15 保留为标准 BT 接口的兼容值；BackUpTwzFree 启动后
+                 会根据自由空间质心动态选择 0.15～1.0 m 的实际距离。 -->
+            <BackUp backup_dist="0.15" backup_speed="0.40" time_allowance="5"/>
+          </RoundRobin>
+          <!-- 清图或移动恢复完成后重新规划。用 {goal}（action 目标）而非
+               {updated_goal}，后者在本树中不再被刷新。
+               规划失败必须由 AlwaysSuccess 吞掉：否则恢复动作被判定失败，RecoveryNode
+               会直接结束导航，无法进入下一轮恢复。 -->
+          <Sequence name="ReplanAndSmoothAfterRecovery">
+            <Fallback name="ReplanOrKeepPath">
+              <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+              <AlwaysSuccess/>
+            </Fallback>
+            <!-- 主分支此后不会再平滑（目标未变，条件短路），所以恢复侧必须自己补一次，
+                 否则机器人会去跟一条未经 constrained_smoother 推离膨胀带的原始 A* 路径。 -->
+            <Fallback name="SmoothPathOrKeepOriginal">
+              <SmoothPath unsmoothed_path="{path}" smoothed_path="{path}" smoother_id="constrained_smoother" max_smoothing_duration="0.6" check_for_collisions="true"/>
+              <AlwaysSuccess/>
+            </Fallback>
+          </Sequence>
+        </Sequence>
+      </ReactiveFallback>
+    </RecoveryNode>
+  </BehaviorTree>
+</root>

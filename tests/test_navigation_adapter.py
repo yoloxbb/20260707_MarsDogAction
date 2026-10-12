@@ -138,7 +138,6 @@ def test_semantic_behaviors_route_to_expected_waypoints() -> None:
         "eatExcitedly": "C",
         "seekFood": "C",
         "seekFoodUrgently": "C",
-        "inspectDogFood": "C",
         "barkShortAlert": "D",
         "lickPaws": "E",
     }
@@ -407,13 +406,13 @@ def test_random_navigation_always_navigates_at_probability_zero() -> None:
     assert fixed_nav.calls[-1][1] == "K"
 
 
-def test_packaged_random_navigation_fixed_pool_covers_all_fixed_points() -> None:
-    """The temporary override ships enabled for A-E; K stays reserved."""
+def test_packaged_random_navigation_uses_reserved_k_target() -> None:
+    """The packaged config delegates random point selection to waypoint_nav."""
     loader = ConfigLoader(CONFIG_DIR)
     loader.load_all()
     config = loader.navigation_config
 
-    assert config["random_navigation_fixed_pool"] == ["A", "B", "C", "D", "E"]
+    assert config["random_navigation_fixed_pool"] == []
     assert config["random_navigation_place"] == "K"
 
 
@@ -421,7 +420,7 @@ def test_random_navigation_fixed_pool_draws_only_fixed_points() -> None:
     loader = ConfigLoader(CONFIG_DIR)
     loader.load_all()
     config = loader.navigation_config
-    pool = config["random_navigation_fixed_pool"]
+    pool = ["A", "B", "C", "D", "E"]
     fixed_nav = RecordingFixedNavigator()
     adapter = BehaviorMobilityAdapter(
         navigate_waypoint=RecordingNavigator(),

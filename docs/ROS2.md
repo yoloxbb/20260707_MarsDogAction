@@ -302,16 +302,19 @@ Lite3 在 Nav2 前执行底盘导航预检，Nav2 终态后确认退出遥控并
 `human_candidates`、`active_target` 或 `tracked_objects` 中同一稳定轨迹。
 上游带 `vision_epoch` 时必须完全一致；未带时仅允许绑定当前最新有效 epoch。
 
-人体社交目标使用锁定人体框高度闭环；动物和物体使用
-`range_valid=true` 的 `distance_m`。行为停止条件和速度上限在
-`config/visual_target_approach.yaml` 中配置。接近失败、取消或
+Action 对锁定视觉目标调用一次 `locate_target_once`，由对齐深度、TF 和路径检查
+生成地图目标，再交给 Nav2 导航。Goal 可在 `params_json` 顶层传
+`stand_off_distance_m`（米），覆盖本次停靠距离；省略时采用
+`config/visual_target_approach.yaml` 的行为默认值。距离必须有限且至少达到
+行为最低距离和类型下限（人 1.5、动物 0.8、物体 0.55 米）。
+例如玩具探索路由传 `0.55`，不影响未传参的“过来”默认 `1.5`。
+实际可达目标可能因障碍向外选择，Nav2 到达容差也影响最终距离。
+接近失败、取消或
 超时后，第 2 个互动/检查 Stage 不执行，Result 的 `metadata_json` 使用
 `visual_target_approach` 返回绑定目标、有效策略和终态原因。
 
 三个定制行为的精确表达动作分别是 `unhappy -> ACT_OWNER_UNHAPPY`、
 `miss_owner -> ACT_EXPRESS_MISS_YOU`、`farewell_leave -> ACT_OWNER_GOING_OUT`。
-其中 `farewell_leave` 的 3 秒到达保持会持续观察同一目标，主人走远时恢复受限
-接近；换人或目标丢失不会继续盲走。
 三者均要求 `target.identity=owner`；身份缺失或不匹配会在运动前失败。
 
 ## 7. 发送 Goal

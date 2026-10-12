@@ -3,7 +3,7 @@ routes:
   ACT_INTERACT_FOLLOW_OWNER: uwb_follow
   ACT_INTERACT_RESPOND_CALL: wake_orientation
   ACT_INTERACT_APPROACH_VOICE_CALLER: person_nav_approach
-  ACT_APPROACH_VISUAL_TARGET: visual_target_approach
+  ACT_APPROACH_VISUAL_TARGET: visual_nav_approach
   ACT_OBJECT_BRING: perception_navigation_manipulation
   ACT_OBJECT_FETCH: perception_navigation_manipulation
   ACT_OBJECT_DROP: perception_navigation_manipulation

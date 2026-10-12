@@ -16,7 +16,7 @@ GoalParser
         │
         ▼
 BehaviorResolver
-  behavior_name 精确属于新表 73 个行为?
+  behavior_name 精确属于新表 77 个行为?
         │
         ▼
 ConfigLoader
@@ -47,8 +47,8 @@ UnitExecutor
 运行时边界：
 
 ```text
-73 direct behaviors
-182 referenced actions
+77 direct behaviors
+191 referenced actions
 0 behavior aliases
 0 legacy behavior fallbacks
 0 unreferenced actions
@@ -60,7 +60,7 @@ UnitExecutor
 |---|---|
 | `goal_id` | 执行唯一 ID，原样回传 |
 | `behavior_id` | 上游行为实例 ID，原样回传 |
-| `behavior_name` | 精确匹配 73 个直接行为，大小写敏感 |
+| `behavior_name` | 精确匹配 77 个直接行为，大小写敏感 |
 | `priority_level` | 写入执行上下文 |
 | `params_json` | 解析为参数字典 |
 | `timeout_sec` | 行为总墙钟超时；从 Goal 开始执行计时，覆盖解析、校验、waypoint_nav/随机 Nav2 导航及全部 Stage/Unit |
@@ -102,8 +102,8 @@ unsupported_behavior: '<requested name>'
 
 | Behavior | Action Stage |
 |---|---|
-| `walk_to_random_point` | waypoint_nav `place="K"` + `ACT_NAV_WALK_RANDOM` |
-| `go_out_to_play` | waypoint_nav `place="K"` + `ACT_NAV_GO_OUT_TO_PLAY` |
+| `walk_to_random_point` | waypoint_nav `place="K"` → `ACT_NAV_WALK_RANDOM` → `arrival_expression` 短组合 |
+| `go_out_to_play` | waypoint_nav `place="K"` → `ACT_NAV_GO_OUT_TO_PLAY` → `arrival_expression` 短组合 |
 | `go_home` | waypoint_nav home 点 + `ACT_NAV_GO_HOME` |
 | `approach_owner` | `ACT_INTERACT_APPROACH_OWNER_CLOSER` |
 | `back_up` | `ACT_BASIC_BACK_UP` |
@@ -147,6 +147,13 @@ Lv0 `emergency_stop` 的全局抢占语义。
 `locate_person_once`，收到 `status=0`、目标 ID 一致的有效结果后，按
 `navigation_required` 决定是否发送一次 Nav2 `/navigate_to_pose`。
 
+### 唤醒后的随机原地表现
+
+`respond_wake_in_place` 是 Tree 内部唤醒流程的独立 30 秒 Goal。
+必须携带 `mobility_policy=in_place`，不要求视觉目标；唯一 `expression` Stage
+每次随机选择一个已审核的原地单动作或完整动作组，不允许导航前置或 mock 回退。
+详细动作池与重复唤醒、租约规则见 [唤醒后的随机表现](WAKE_RESPONSE.md)。
+
 ### 视觉安全事件行为
 
 `respond_person_fall` 和 `respond_stop_gesture` 是两个独立的精确行为名。它们
@@ -157,7 +164,7 @@ Lv0 `emergency_stop` 的全局抢占语义。
 ### 社交、动物和物体目标接近
 
 以下行为的第一个必需 Stage 固定为
-`ACT_APPROACH_VISUAL_TARGET -> visual_target_approach`：
+`ACT_APPROACH_VISUAL_TARGET -> visual_nav_approach`：
 
 ```text
 seekHumanInteraction, seekInteraction, inviteHumanToPlay
@@ -170,10 +177,18 @@ unhappy, miss_owner, farewell_leave
 ```
 
 `params_json.target` 必须包含匹配行为策略的 `target_type` 和非空
-`target_id`。若上游提供 `vision_epoch`，Action 强制与当前视觉流一致；当前普通
+`target_id`。可在 `params_json` 顶层传 `stand_off_distance_m`（米）指定本次
+停靠距离；省略时使用行为配置默认值，人默认至少 1.5 米，物体默认 0.9 米。
+显式值须为有限数且不小于行为 `minimum_safe_distance_m` 和类型下限
+（人 1.5、动物 0.8、物体 0.2 米）；非法请求在定位和导航前拒绝。
+此参数不更改后续 Goal 的默认值，详见 [距离契约](VISUAL_TARGET_APPROACH.md#距离和预算)。
+若上游提供 `vision_epoch`，Action 强制与当前视觉流一致；当前普通
 Need 目标未携带 epoch 时，Action 会先在最新有效视觉快照中唯一绑定同一
 `track_id/target_id/identity`，再把当前 epoch 与轨迹固定到本次执行。不能唯一
-绑定、没有稳定轨迹、公制距离无效或目标丢失时，接近 Stage 失败并阻止后续动作。
+绑定、没有稳定轨迹、原图/深度定位失败时，接近 Stage 失败并阻止后续动作。
+绑定后调用 VisionTask.locate_target_once，冻结地图目标，再由 Action 发送一次 Nav2 Goal；
+真实导航终态和底盘收稳共同决定接近是否完成。人体至少保持 1.5 m，
+动物和物体使用各行为的地图停止距离，详见 VISUAL_TARGET_APPROACH.md。
 `exploreRoom` 没有具体目标，不包含该 Stage。
 目标在 Goal 边界短暂进入 `temporarily_lost` 时，Action 先零速等待配置的视觉重捕获
 窗口，不会立即把情绪延续判为 `visual_target_not_found`。
@@ -190,6 +205,14 @@ Need 目标未携带 epoch 时，Action 会先在最新有效视觉快照中唯�
 猜测人物。速度、人体框目标高度和
 到达保持由 Action 配置收紧；`farewell_leave` 保持阶段只跟随同一锁定 Track。
 
+### 熟悉玩具的到点表达
+
+`inspectFamiliarPlayItem` 按 `target_approach -> arrival_expression -> inspect`
+执行。到点组合从三个完整 `ACT_ROAM_*` 序列中随机选择，每套上限 12 秒，
+随后执行原六个玩具候选之一；任一必需阶段失败会中止后续阶段。
+所有阶段共用上游 Goal 总预算，组合不改变已绑定目标。
+详见 [熟悉玩具的到点表达](RANDOM_ARRIVAL_EXPRESSIONS.md#熟悉玩具的到点表达)。
+
 ## Stage 字段
 
 | 字段 | 含义 |
@@ -201,6 +224,10 @@ Need 目标未携带 epoch 时，Action 会先在最新有效视觉快照中唯�
 | `candidates[].unit_id` | 可执行的精确 `ACT_*` |
 
 所有 Stage 均按配置顺序执行。每个 Stage 从过滤后的候选中选择一个动作。
+
+`ACT_ROAM_*` 的一次选择包含完整硬件序列，不是重新挑选子动作。相关随机语音
+行为和六种情绪 solo 路由由 Tree 提供 70 秒总预算，覆盖最多 45 秒的 K 导航与
+最多 20 秒的到点表达。详见 [随机到点表现](RANDOM_ARRIVAL_EXPRESSIONS.md)。
 
 ## 下游字段
 
@@ -280,3 +307,35 @@ seek_food_or_water
 - `barkShortAlert` 暂按表执行排泄相关动作。2026-09-18 起其 Stage 顺序为
   `circle` → `action` → `exit` → `head_up`，最后一步 `ACT_RAISE_HEAD`（抬头）
   是完成信号。`ACT_RAISE_HEAD` 是本项目新增的动作，不在上游原表中。
+
+
+## 语音玩具探索契约
+
+`EVT_VOICE_COMMAND_INSPECT_TOY` + `CMD_INSPECT_TOY` → Tree `command_inspect_toy`
+→ Action `inspect_toy`。Tree 总超时 210 秒，无需预置视觉 target。
+`acquire_labels` 只在此物体行为中启用，候选来自独占检测 session 的新鲜 schema v2 结果。
+导航和三个姿态 Stage 都必须成功；检测、定位或导航失败不允许跳到姿态 Stage。
+语音 `ACT_INSPECT_TOY` 元数据不作为实际执行的 atomic unit。
+
+
+## 视觉招手直驱：respond_wave_gesture
+
+`EVT_VISION_WAVE` → Tree `visual_wave_response` → `respond_wave_gesture`
+（Lv1 / sub_priority=12 / semantic_rank=2，总预算 180s，TTL 8s，冷却 2s）。
+动态招手 `pose_action=waving` 与静态举手 `arm_raise_wave` 分离，任意被跟踪的人
+均可触发，无需人脸注册、身份确认或语音唤醒。Tree 从同帧 `active_target` 固定
+`vision_epoch + target_id`，Goal 携带 human target、strict_target_lock=true、
+allow_target_switch=false、stand_off_distance_m=1.5。
+
+两个必选 Stage 按顺序执行：
+
+1. `target_approach` / `ACT_APPROACH_VISUAL_TARGET`：通过 Vision
+   `locate_target_once` 获取地图目标，执行一次 Nav2 导航，在人前至少 1.5m 停止；
+   已在停距内则无需导航。
+2. `expression` / `ACT_TWIST_WAIST_LEFT_RIGHT`：原地左右扭腰。Go2 使用
+   BalanceStand + Euler z=+0.2/-0.2/0，分别保持 1.0/1.0/0.3 秒。
+
+目标/epoch 不匹配、定位或导航失败、取消、超时均终止，不进入扭腰 Stage。
+连续招手状态帧按事件/epoch/目标去重，候选池继续阻止同名排队/执行重复。
+Go2 表达完成标记仍为指令发布和配置等待完成，不能据此断言真机动作完成；
+实机验收需观察靠近、停距、左右扭腰及停止手势抢占。

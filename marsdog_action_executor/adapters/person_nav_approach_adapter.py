@@ -14,6 +14,7 @@ import time
 import uuid
 from typing import Any, Mapping
 
+from .nav2_goal_transport import Ros2Nav2GoalTransport
 from .target_approach_adapter import TargetApproachResult
 from .velocity import TwistCommand
 
@@ -240,10 +241,15 @@ class PersonNavApproachAdapter:
                     "navigation_exception:%s:operator_recovery_required" % type(exc).__name__,
                 )
             finally:
-                try:
-                    settled = not callable(finish) or finish() is not False
-                except Exception:
-                    settled = False
+                # An unresolved Nav2 send/result still owns the chassis.  A
+                # cancel acknowledgement or transport timeout must not switch
+                # back to Joystick Mode while that goal may remain active.
+                settled = True
+                if not self.recovery_required:
+                    try:
+                        settled = not callable(finish) or finish() is not False
+                    except Exception:
+                        settled = False
             if not settled:
                 self._transport.recovery_required = True
                 success, canceled, nav_reason = (
@@ -275,43 +281,24 @@ class PersonNavApproachAdapter:
         return all(math.isfinite(coord) for coord in coords)
 
 
-class Ros2PersonApproachTransport:
-    """ROS futures are drained through real Nav2 terminal results."""
+class Ros2PersonApproachTransport(Ros2Nav2GoalTransport):
+    """Vision returns a fixed target; the shared transport executes Nav2."""
 
     def __init__(self, node: Any, *, vision_service: str = "/perception/vision/task",
                  nav_action: str = "/navigate_to_pose", service_timeout_sec: float = 30.0,
-                 server_timeout_sec: float = 10.0):
+                 server_timeout_sec: float = 10.0, behavior_tree: str = ""):
         from marsdog_vision_interaction.srv import VisionTask
-        from nav2_msgs.action import NavigateToPose
-        from rclpy.action import ActionClient
         from rclpy.callback_groups import ReentrantCallbackGroup
 
-        self._node = node
+        super().__init__(node, nav_action=nav_action, server_timeout_sec=server_timeout_sec,
+                         behavior_tree=behavior_tree)
         self._vision_type = VisionTask
-        self._nav_type = NavigateToPose
         self._service_timeout = float(service_timeout_sec)
-        self._server_timeout = float(server_timeout_sec)
-        if (not math.isfinite(self._service_timeout) or self._service_timeout <= 0
-                or not math.isfinite(self._server_timeout) or self._server_timeout <= 0):
-            raise ValueError("person approach service and server timeouts must be finite and positive")
+        if not math.isfinite(self._service_timeout) or self._service_timeout <= 0:
+            raise ValueError("person approach service timeout must be finite and positive")
         self._vision = node.create_client(
             VisionTask, vision_service, callback_group=ReentrantCallbackGroup()
         )
-        self._nav = ActionClient(
-            node, NavigateToPose, nav_action, callback_group=ReentrantCallbackGroup()
-        )
-        self._lock = threading.Lock()
-        self._goal = None
-        self._cancel_sent = False
-        self.recovery_required = False
-
-    def cancel(self) -> None:
-        with self._lock:
-            goal = self._goal
-            if goal is None or self._cancel_sent:
-                return
-            self._cancel_sent = True
-        goal.cancel_goal_async()
 
     @staticmethod
     def _wait(future: Any, deadline: float, cancel: threading.Event) -> bool:
@@ -323,6 +310,19 @@ class Ros2PersonApproachTransport:
 
     def locate(self, target_id: str, stand_off: float, deadline: float,
                cancel: threading.Event) -> tuple[dict | None, str]:
+        return self._locate_task("locate_person_once", {
+            "target_id": target_id, "stand_off_distance": stand_off,
+        }, deadline, cancel)
+
+    def locate_target(self, target_id, target_type, stand_off, deadline, cancel,
+                      *, min_confidence, required_identity=None):
+        return self._locate_task("locate_target_once", {
+            "target_id": target_id, "target_type": target_type,
+            "stand_off_distance": stand_off, "min_confidence": min_confidence,
+            "required_identity": required_identity,
+        }, deadline, cancel)
+
+    def _locate_task(self, task_type, params, deadline, cancel):
         service_deadline = min(deadline, time.monotonic() + self._service_timeout)
         while time.monotonic() < service_deadline and not cancel.is_set():
             if self._vision.wait_for_service(timeout_sec=min(
@@ -335,10 +335,8 @@ class Ros2PersonApproachTransport:
             return None, "canceled_before_localization"
         request = self._vision_type.Request()
         request.task_id = "person-locate-" + uuid.uuid4().hex
-        request.task_type = "locate_person_once"
-        request.params_json = json.dumps({
-            "target_id": target_id, "stand_off_distance": stand_off,
-        })
+        request.task_type = task_type
+        request.params_json = json.dumps(params)
         future = self._vision.call_async(request)
         response_deadline = min(deadline, time.monotonic() + self._service_timeout)
         if not self._wait(future, response_deadline, cancel):
@@ -352,6 +350,9 @@ class Ros2PersonApproachTransport:
             return None, "vision_localization_timeout"
         try:
             response = future.result()
+            if (response is None or response.task_id != request.task_id
+                    or response.task_type != request.task_type):
+                return None, "vision_localization_response_mismatch"
             result = json.loads(response.result_json or "{}")
         except Exception as exc:
             return None, "vision_localization_error:%s" % exc
@@ -360,105 +361,3 @@ class Ros2PersonApproachTransport:
         if not response.success:
             return None, str(result.get("error_code") or response.error_message or "vision_localization_failed")
         return result, "ok"
-
-    @staticmethod
-    def valid_pose(pose: Any) -> bool:
-        if not isinstance(pose, Mapping):
-            return False
-        header = pose.get("header")
-        p = pose.get("pose")
-        if not isinstance(header, Mapping) or header.get("frame_id") != "map" or not isinstance(p, Mapping):
-            return False
-        position = p.get("position")
-        orientation = p.get("orientation")
-        try:
-            values = [float(position[k]) for k in ("x", "y", "z")]
-            values += [float(orientation[k]) for k in ("x", "y", "z", "w")]
-        except (TypeError, ValueError, KeyError):
-            return False
-        norm_squared = sum(v * v for v in values[3:])
-        return (all(math.isfinite(value) for value in values)
-                and 0.9 <= norm_squared <= 1.1)
-
-    def navigate(self, pose: Mapping[str, Any], deadline: float,
-                 cancel: threading.Event) -> tuple[bool, bool, str]:
-        from action_msgs.msg import GoalStatus
-        from rclpy import ok as ros_ok
-
-        server_wait = min(self._server_timeout, max(0.0, deadline - time.monotonic()))
-        if server_wait <= 0 or not self._nav.wait_for_server(timeout_sec=server_wait):
-            return False, False, "nav2_server_unavailable"
-        if cancel.is_set():
-            return False, True, "canceled_before_navigation"
-        goal = self._nav_type.Goal()
-        goal.pose.header.frame_id = pose["header"]["frame_id"]
-        goal.pose.header.stamp = self._node.get_clock().now().to_msg()
-        for key in ("x", "y", "z"):
-            setattr(goal.pose.pose.position, key, float(pose["pose"]["position"][key]))
-        for key in ("x", "y", "z", "w"):
-            setattr(goal.pose.pose.orientation, key, float(pose["pose"]["orientation"][key]))
-        sent = self._nav.send_goal_async(goal)
-        # A timeout after dispatch has uncertain acceptance.  Latch recovery
-        # and cancel any late accepted handle before accepting another Goal.
-        accept_deadline = min(deadline, time.monotonic() + self._server_timeout)
-        while not sent.done() and ros_ok() and time.monotonic() < accept_deadline:
-            time.sleep(0.02)
-        if not sent.done():
-            self.recovery_required = True
-            sent.add_done_callback(self._cancel_late_accepted_goal)
-            return False, False, "nav2_acceptance_unknown:operator_recovery_required"
-        try:
-            handle = sent.result()
-        except Exception as exc:
-            return False, False, "nav2_send_error:%s" % exc
-        if handle is None or not handle.accepted:
-            return False, False, "nav2_goal_rejected"
-        with self._lock:
-            self._goal = handle
-            self._cancel_sent = False
-        result_future = handle.get_result_async()
-        timed_out = False
-        cancel_deadline = None
-        try:
-            while not result_future.done() and ros_ok():
-                if cancel.is_set() or time.monotonic() >= deadline:
-                    timed_out = not cancel.is_set()
-                    self.cancel()
-                    if cancel_deadline is None:
-                        cancel_deadline = time.monotonic() + self._server_timeout
-                if cancel_deadline is not None and time.monotonic() >= cancel_deadline:
-                    self.recovery_required = True
-                    return False, False, "nav2_terminal_unknown:operator_recovery_required"
-                time.sleep(0.02)
-            if not result_future.done():
-                self.recovery_required = True
-                return False, False, "nav2_result_unknown_after_shutdown:operator_recovery_required"
-            wrapped = result_future.result()
-            if wrapped is None:
-                return False, False, "nav2_empty_result"
-            status = wrapped.status
-            if timed_out:
-                return False, False, "navigation_timeout"
-            if cancel.is_set() or status == GoalStatus.STATUS_CANCELED:
-                return False, True, "navigation_canceled"
-            if status == GoalStatus.STATUS_SUCCEEDED:
-                return True, False, "navigation_succeeded"
-            return False, False, "navigation_status_%s" % status
-        finally:
-            if result_future.done():
-                with self._lock:
-                    self._goal = None
-                    self._cancel_sent = False
-            else:
-                with self._lock:
-                    # Permit an emergency-stop retry while recovery is latched.
-                    self._cancel_sent = False
-
-    def _cancel_late_accepted_goal(self, future: Any) -> None:
-        try:
-            handle = future.result()
-            if handle is not None and handle.accepted:
-                handle.cancel_goal_async()
-                handle.get_result_async()
-        except Exception as exc:
-            self._node.get_logger().error("Late Nav2 goal cancel failed: %s" % exc)

@@ -27,6 +27,10 @@ setup(
             os.path.join("share", package_name, "config"),
             glob("config/*.yaml"),
         ),
+        (
+            os.path.join("share", package_name, "config"),
+            glob("config/*.xml"),
+        ),
         # Emotion/behavior visualization assets
         (
             os.path.join(

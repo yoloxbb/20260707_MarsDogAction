@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import math
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -669,6 +670,20 @@ class ConfigLoader:
         config = self.go2_sport_config
         if not config:
             return
+        stand_wait = config.get("stand_up_wait_sec", 2.5)
+        bridge = config.get("cmd_vel_bridge", {})
+        if not isinstance(bridge, dict):
+            self._errors.append("go2_sport.yaml: cmd_vel_bridge must be a mapping")
+        elif (not isinstance(bridge.get("enabled", True), bool)
+              or not isinstance(bridge.get("topic", "/cmd_vel"), str)
+              or not bridge.get("topic", "/cmd_vel").startswith("/")
+              or not self._is_finite_number(bridge.get("timeout_sec", 0.5))
+              or not 0 < float(bridge.get("timeout_sec", 0.5)) <= 5):
+            self._errors.append("go2_sport.yaml: invalid cmd_vel_bridge enabled/topic/timeout_sec")
+        if not self._is_finite_number(stand_wait) or not 0.0 < float(stand_wait) <= 10.0:
+            self._errors.append(
+                "go2_sport.yaml: stand_up_wait_sec must be within (0, 10]"
+            )
         if not isinstance(config.get("enabled", False), bool):
             self._errors.append("go2_sport.yaml: enabled must be boolean")
         topic = config.get("request_topic")
@@ -703,6 +718,8 @@ class ConfigLoader:
             self._errors.append(
                 "go2_sport.yaml: limits.min_linear_x must be >= 0"
             )
+        elif self._is_finite_number(limits.get("max_linear_x")) and float(min_linear) > float(limits["max_linear_x"]):
+            self._errors.append("go2_sport.yaml: min_linear_x must not exceed max_linear_x")
 
         supported_commands = {
             "damp", "balance_stand", "stop_move", "stand_up",
@@ -716,16 +733,18 @@ class ConfigLoader:
                 "go2_sport.yaml: action_sequences must be a non-empty mapping"
             )
             sequences = {}
-        for unit_id, sequence in sequences.items():
+        for unit_id, plan in sequences.items():
             if unit_id not in self.action_catalog:
                 self._errors.append(
                     f"go2_sport.yaml: unknown action {unit_id!r}"
                 )
+            self._validate_go2_plan(plan, f"Go2 action {unit_id!r}")
             self._validate_go2_sequence(
-                sequence,
+                plan.get("sequence") if isinstance(plan, dict) else None,
                 label=f"Go2 action {unit_id!r}",
                 supported_commands=supported_commands,
                 unit_ids=[str(unit_id)],
+                timeout_override=plan.get("timeout_sec") if isinstance(plan, dict) else None,
             )
 
         action_groups = config.get("action_groups", {})
@@ -740,16 +759,7 @@ class ConfigLoader:
             if not isinstance(group_config, dict):
                 self._errors.append(f"{label}: expected mapping")
                 continue
-            fidelity = group_config.get("fidelity")
-            if fidelity not in {"exact", "proxy"}:
-                self._errors.append(
-                    f"{label}: fidelity must be 'exact' or 'proxy'"
-                )
-            description = group_config.get("description")
-            if not isinstance(description, str) or not description.strip():
-                self._errors.append(
-                    f"{label}: description must be a non-empty string"
-                )
+            self._validate_go2_plan(group_config, label)
             actions = group_config.get("actions")
             if not isinstance(actions, list) or not actions:
                 self._errors.append(f"{label}: actions must be a non-empty list")
@@ -780,7 +790,29 @@ class ConfigLoader:
                 label=label,
                 supported_commands=supported_commands,
                 unit_ids=valid_actions,
+                timeout_override=group_config.get("timeout_sec"),
             )
+
+        unsupported = config.get("unsupported_actions", {})
+        if not isinstance(unsupported, dict):
+            self._errors.append("go2_sport.yaml: unsupported_actions must be a mapping")
+            unsupported = {}
+        for unit_id, reason in unsupported.items():
+            if unit_id not in self.action_catalog:
+                self._errors.append(f"Go2 unsupported action: unknown action {unit_id!r}")
+            if not isinstance(reason, str) or not reason.strip():
+                self._errors.append(f"Go2 unsupported action {unit_id!r}: reason is required")
+            if unit_id in sequences or unit_id in grouped_actions:
+                self._errors.append(f"Go2 action {unit_id!r}: both executable and unsupported")
+
+        spin = config.get("spin", {})
+        if not isinstance(spin, dict):
+            spin = {}
+        if not str(spin.get("action_name", "")).startswith("/"):
+            self._errors.append("go2_sport.yaml: spin.action_name must be an absolute ROS action")
+        spin_wait = spin.get("server_timeout_sec")
+        if not self._is_finite_number(spin_wait) or float(spin_wait) <= 0:
+            self._errors.append("go2_sport.yaml: spin.server_timeout_sec must be positive")
 
         overrides = config.get("controller_route_overrides", {})
         if not isinstance(overrides, dict):
@@ -798,7 +830,7 @@ class ConfigLoader:
                     f"go2_sport.yaml route override {unit_id!r}: unsupported "
                     f"controller {route!r}"
                 )
-            if unit_id in sequences or unit_id in grouped_actions:
+            if unit_id in sequences or unit_id in grouped_actions or unit_id in unsupported:
                 self._errors.append(
                     f"go2_sport.yaml: {unit_id!r} cannot have both a SportMode "
                     "mapping and a controller route override"
@@ -868,6 +900,7 @@ class ConfigLoader:
         effective_routes.update(
             {str(unit_id): str(route) for unit_id, route in overrides.items()}
         )
+        effective_routes.update({str(unit_id): "unsupported" for unit_id in unsupported})
         invalid_go2_routes = {
             "unsupported", "perception_navigation_manipulation"
         }
@@ -876,11 +909,56 @@ class ConfigLoader:
                 unit_id,
                 effective_routes.get("_default", "unsupported"),
             )
-            if route in invalid_go2_routes:
+            if route in invalid_go2_routes and unit_id not in unsupported:
                 self._errors.append(
                     f"go2_sport.yaml: action {unit_id!r} remains on "
                     f"unavailable Go2 route {route!r}"
                 )
+
+        stage_overrides = config.get("behavior_stage_overrides", {})
+        if not isinstance(stage_overrides, dict):
+            self._errors.append("go2_sport.yaml: behavior_stage_overrides must be a mapping")
+            return
+        for name, stages in stage_overrides.items():
+            template = self.behavior_tree_templates.get(name, {})
+            originals = {stage["stage_id"]: stage for stage in template.get("stages", [])}
+            if not originals or not isinstance(stages, dict):
+                self._errors.append(f"Go2 stage override {name!r}: unknown behavior or invalid stages")
+                continue
+            for stage_id, patch in stages.items():
+                label = f"Go2 stage override {name!r}/{stage_id!r}"
+                if stage_id not in originals or not isinstance(patch, dict):
+                    self._errors.append(f"{label}: unknown stage or invalid patch")
+                    continue
+                policy = patch.get("selection_policy")
+                keys = {"selection_policy", "candidates"}
+                if policy == "random_n":
+                    keys.add("selection_count")
+                    self._validate_selection_count(patch, label)
+                if set(patch) != keys or policy not in {"sequence", "random_n"}:
+                    self._errors.append(f"{label}: expected sequence or random_n with its selection_count and candidates")
+                candidates = patch.get("candidates")
+                if not isinstance(candidates, list) or not candidates:
+                    self._errors.append(f"{label}: candidates must be non-empty")
+                    continue
+                for candidate in candidates:
+                    if (not isinstance(candidate, dict) or set(candidate) != {"unit_id"}
+                            or candidate.get("unit_id") not in go2_actions):
+                        self._errors.append(f"{label}: candidate must reference a mapped Go2 action")
+
+    def _validate_go2_plan(self, plan: Any, label: str) -> None:
+        if not isinstance(plan, dict):
+            self._errors.append(f"{label}: expected plan mapping")
+            return
+        if plan.get("fidelity") not in {"exact", "composed", "proxy"}:
+            self._errors.append(f"{label}: fidelity must be exact, composed or proxy")
+        if not isinstance(plan.get("description"), str) or not plan["description"].strip():
+            self._errors.append(f"{label}: description must be a non-empty string")
+        if plan.get("commanded_posture", "") not in {"", "standing", "sitting", "lying"}:
+            self._errors.append(f"{label}: invalid commanded_posture")
+        timeout = plan.get("timeout_sec")
+        if timeout is not None and (not self._is_finite_number(timeout) or not 0 < float(timeout) <= 120):
+            self._errors.append(f"{label}: timeout_sec must be within (0, 120]")
 
     def _validate_go2_sequence(
         self,
@@ -889,6 +967,7 @@ class ConfigLoader:
         label: str,
         supported_commands: set[str],
         unit_ids: list[str],
+        timeout_override: float | None = None,
     ) -> None:
         """Validate one reusable Go2 SportMode sequence and its time budget."""
         if not isinstance(sequence, list) or not sequence:
@@ -902,7 +981,7 @@ class ConfigLoader:
                 )
                 continue
             command = item.get("command")
-            if command not in supported_commands:
+            if command not in supported_commands | {"nav2_spin"}:
                 self._errors.append(
                     f"{label} item {index}: unsupported command {command!r}"
                 )
@@ -919,8 +998,19 @@ class ConfigLoader:
                         self._errors.append(
                             f"{label} item {index}: {axis} must be finite"
                         )
+            if command == "speed_level" and (
+                type(item.get("data")) is not int or item["data"] not in {-1, 0, 1}
+            ):
+                self._errors.append(f"{label} item {index}: speed_level.data must be -1, 0 or 1")
+            if command == "nav2_spin":
+                turns = item.get("turns")
+                if not self._is_finite_number(turns) or not 0 < abs(float(turns)) <= 3:
+                    self._errors.append(f"{label} item {index}: turns must be nonzero and within [-3, 3]")
+                if not self._is_finite_number(duration) or float(duration) <= 0:
+                    self._errors.append(f"{label} item {index}: Spin needs a positive time allowance")
         for unit_id in unit_ids:
-            timeout = self.action_catalog.get(unit_id, {}).get("timeout_sec")
+            timeout = (timeout_override if timeout_override is not None else
+                       self.action_catalog.get(unit_id, {}).get("timeout_sec"))
             if (
                 self._is_finite_number(timeout)
                 and float(timeout) > 0.0
@@ -952,6 +1042,8 @@ class ConfigLoader:
                 policy = stage.get("selection_policy", "random_one")
                 if policy not in VALID_SELECTION_POLICIES:
                     self._errors.append(f"Behavior {name!r} stage {sid!r}: invalid selection_policy {policy!r}")
+                if policy == "random_n":
+                    self._validate_selection_count(stage, f"Behavior {name!r} stage {sid!r}")
                 motion_state = stage.get("motion_state", "active")
                 if motion_state not in VALID_MOTION_STATES:
                     self._errors.append(
@@ -969,6 +1061,27 @@ class ConfigLoader:
                             f"Behavior {name!r} stage {sid!r}: "
                             f"unknown action {unit_id!r}"
                         )
+
+    def _validate_selection_count(self, stage: Mapping[str, Any], label: str) -> None:
+        """Bound a random combination and prohibit duplicated semantic units."""
+        count = stage.get("selection_count")
+        if not isinstance(count, dict) or set(count) != {"min", "max"}:
+            self._errors.append(f"{label}: selection_count must contain min and max")
+            return
+        candidates = stage.get("candidates", [])
+        unit_ids = (
+            [c.get("unit_id") for c in candidates if isinstance(c, dict)]
+            if isinstance(candidates, list) else []
+        )
+        if (
+            any(not isinstance(value, int) or isinstance(value, bool) for value in count.values())
+            or not 1 <= count["min"] <= count["max"] <= len(unit_ids)
+        ):
+            self._errors.append(
+                f"{label}: selection_count must satisfy 1 <= min <= max <= candidate count"
+            )
+        if len(set(unit_ids)) != len(unit_ids):
+            self._errors.append(f"{label}: random_n candidates must have unique unit_id values")
 
     def _validate_action_catalog(self) -> None:
         catalog = self.action_catalog
@@ -1797,6 +1910,18 @@ class ConfigLoader:
                     f"{prefix}: policy {behavior_name!r} has invalid "
                     "target_type"
                 )
+            acquire_labels = policy.get("acquire_labels")
+            if acquire_labels is not None and (
+                policy.get("target_type") != "object"
+                or not isinstance(acquire_labels, list)
+                or not acquire_labels
+                or any(not isinstance(label, str) or not label.strip()
+                       for label in acquire_labels)
+            ):
+                self._errors.append(
+                    f"{prefix}: policy {behavior_name!r}.acquire_labels "
+                    "requires a non-empty list of object labels"
+                )
             distance_mode = policy.get("distance_mode", "metric")
             if distance_mode not in {
                 "metric",
@@ -1897,11 +2022,11 @@ class ConfigLoader:
 
         routes = self.controller_routes.get("routes", {})
         if routes.get("ACT_APPROACH_VISUAL_TARGET") != (
-            "visual_target_approach"
+            "visual_nav_approach"
         ):
             self._errors.append(
                 "ACT_APPROACH_VISUAL_TARGET controller route must be "
-                "'visual_target_approach'"
+                "'visual_nav_approach'"
             )
         approach_unit = self.action_catalog.get("ACT_APPROACH_VISUAL_TARGET", {})
         if approach_unit.get("requires_controller") is not True:
@@ -2000,9 +2125,16 @@ class ConfigLoader:
     def config_dir(self) -> Path:
         return self._dir
 
-    def get_behavior_template(self, name: str) -> dict[str, Any] | None:
-        """Return a behavior-tree template by exact direct name."""
-        return self.behavior_tree_templates.get(name)
+    def get_behavior_template(self, name: str, chassis_type: str | None = None) -> dict[str, Any] | None:
+        """Return the strict template with optional chassis expression overrides."""
+        template = self.behavior_tree_templates.get(name)
+        overrides = self.go2_sport_config.get("behavior_stage_overrides", {}).get(name, {})
+        if template is None or chassis_type != "go2" or not overrides:
+            return template
+        template = deepcopy(template)
+        for stage in template["stages"]:
+            stage.update(deepcopy(overrides.get(stage["stage_id"], {})))
+        return template
 
     def get_all_behavior_templates(self) -> dict[str, Any]:
         """Return the strict behavior-tree contract."""
@@ -2017,20 +2149,26 @@ class ConfigLoader:
 
     def get_go2_action_sequences(self) -> dict[str, list[dict[str, Any]]]:
         """Expand direct and reusable-group Go2 mappings by exact ACT_* ID."""
+        return {unit_id: plan["sequence"] for unit_id, plan in self.get_go2_action_plans().items()}
+
+    def get_go2_action_plans(self) -> dict[str, dict[str, Any]]:
+        """Preserve fidelity, timeout and commanded posture with every sequence."""
         result = {
-            str(unit_id): [dict(item) for item in sequence]
-            for unit_id, sequence in self.go2_sport_config.get(
+            str(unit_id): {**dict(plan), "plan_id": str(unit_id),
+                           "sequence": [dict(item) for item in plan["sequence"]]}
+            for unit_id, plan in self.go2_sport_config.get(
                 "action_sequences", {}
             ).items()
         }
-        for group_config in self.go2_sport_config.get(
+        for group_name, group_config in self.go2_sport_config.get(
             "action_groups", {}
-        ).values():
-            sequence = [
-                dict(item) for item in group_config.get("sequence", [])
-            ]
+        ).items():
             for unit_id in group_config.get("actions", []):
-                result[str(unit_id)] = [dict(item) for item in sequence]
+                result[str(unit_id)] = {
+                    **{k: v for k, v in group_config.items() if k not in {"actions", "sequence"}},
+                    "plan_id": str(group_name),
+                    "sequence": [dict(item) for item in group_config["sequence"]],
+                }
         return result
 
     def get_lite3_action_plans(self) -> dict[str, dict[str, Any]]:
@@ -2094,4 +2232,6 @@ class ConfigLoader:
                 "controller_route_overrides", {}
             ).items()
         })
+        routes.update({str(unit_id): "unsupported" for unit_id in
+                       self.go2_sport_config.get("unsupported_actions", {})})
         return routes

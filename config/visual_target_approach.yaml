@@ -1,8 +1,12 @@
 enabled: true
 
-# Closed-loop controller limits. Human social behaviors may explicitly use the
-# detector bbox height as a conservative visual-servo proxy. Animal and object
-# behaviors retain metric depth because their physical sizes vary too much.
+# Production ACT_APPROACH_VISUAL_TARGET uses locate_target_once -> Nav2.
+# Binding/stream thresholds below remain active. Speed/bbox servo settings are
+# legacy compatibility fixtures; Nav2 owns approach motion and obstacle avoidance.
+# Human stand-off is clamped to at least 1.5 m by both Action and Vision.
+# desired_distance_m is the default for each behavior. A Tree Goal may supply
+# params_json.stand_off_distance_m for this invocation; it must meet both the
+# behavior's minimum_safe_distance_m and Vision's type-specific distance floor.
 publish_rate_hz: 10.0
 min_confidence: 0.50
 visual_timeout_sec: 0.8
@@ -45,7 +49,7 @@ object_detection_stream:
   service_name: /perception/vision/task
   topic: /perception/vision/object_detections
   rate_hz: 4.0
-  confidence: 0.35
+  confidence: 0.25
   service_timeout_sec: 1.0
   lease_margin_sec: 2.0
 
@@ -54,6 +58,13 @@ object_detection_stream:
 # farther away than greeting/play; object inspection uses a closer but guarded
 # distance. exploreRoom is intentionally absent because it has no target.
 behavior_policies:
+  respond_wave_gesture:
+    target_type: human
+    distance_mode: metric
+    desired_distance_m: 1.50
+    minimum_safe_distance_m: 1.50
+    target_max_age_ms: 500.0
+    target_lost_timeout_sec: 2.0
   seekHumanInteraction:
     target_type: human
     distance_mode: bbox_height
@@ -157,10 +168,16 @@ behavior_policies:
   inspectObject: &object_policy
     target_type: object
     desired_distance_m: 0.90
-    minimum_safe_distance_m: 0.55
-    min_confidence: 0.35
+    minimum_safe_distance_m: 0.20
+    min_confidence: 0.25
     target_max_age_ms: 500.0
     target_lost_timeout_sec: 1.8
+  inspect_toy:
+    <<: *object_policy
+    desired_distance_m: 0.60
+    minimum_safe_distance_m: 0.40
+    # Only this explicit behavior may acquire a target without a Tree ID.
+    acquire_labels: [dog toy ball, dog frisbee toy, dog tug ring toy]
   inspectFamiliarPlayItem: *object_policy
   inspectTrashCan: *object_policy
   inspectDeliveryBox: *object_policy

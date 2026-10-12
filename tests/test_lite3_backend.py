@@ -224,7 +224,7 @@ def test_full_proxy_mapping_covers_every_behavior_stage() -> None:
         "person_nav_approach",
         "uwb_follow",
         "uwb_roam",
-        "visual_target_approach",
+        "visual_nav_approach",
         "wake_orientation",
     }
     unsupported_behaviors: set[str] = set()
@@ -251,7 +251,8 @@ def test_full_proxy_mapping_covers_every_behavior_stage() -> None:
     # assertion above still holds because the ritual's six stages are all
     # already-backed candidates: 低头 (the pitch anchor), 抬头, 趴下, 站立
     # and the new 扭腰.
-    assert len(plans) == 169
+    # Eight target-free arrival expressions implement complete short sequences.
+    assert len(plans) == 177
 
 
 def test_lite3_plans_use_physical_motion_except_true_hold_semantics() -> None:
@@ -314,7 +315,7 @@ def test_all_unverified_actions_resolve_to_an_accepted_physical_plan() -> None:
     }
     # 181, not 183: the two moonwalk units were removed on 2026-09-18.
     # 160 = 182 + ACT_TWIST_WAIST_LEFT_RIGHT - the 23 orphaned eating units.
-    assert len(unverified) == 160
+    assert len(unverified) == 168
     assert all(backend.can_execute(unit_id) for unit_id in unverified)
 
 
@@ -1239,7 +1240,8 @@ def test_every_pose_hold_fits_inside_its_unit_budget() -> None:
     # 126: every all-pose plan except the five policy units.  The eating ritual
     # added the only multi-step one (ACT_TWIST_WAIST_LEFT_RIGHT, two 1.6 s
     # 偏航 holds, 5.9 s of 8.0 s budget) and deleted 23 single-step ones.
-    assert checked == 126
+    # Five new arrival combinations contain only pose steps.
+    assert checked == 131
 
 
 def test_toilet_marks_completion_with_a_final_head_up() -> None:

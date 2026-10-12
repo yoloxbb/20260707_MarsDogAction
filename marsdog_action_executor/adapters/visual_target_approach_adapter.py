@@ -1,9 +1,9 @@
 """Safe one-shot approach to a selected visual human, animal, or object.
 
-The Behavior Tree already selects the semantic target.  This adapter binds
-that reference to one live detector track, converts the generic visual stream
-to the strict input consumed by :class:`TargetApproachAdapter`, and never
-selects a different target after execution starts.
+This adapter binds a Tree-selected target to one live detector track. Explicit
+object policies may acquire a target from a leased stream when Tree has no ID.
+Once bound, the target stays fixed. The legacy velocity delegate consumes a
+normalized stream; the production subclass sends a fixed Nav2 goal.
 """
 
 from __future__ import annotations
@@ -114,6 +114,8 @@ class VisualTargetApproachAdapter:
         self._lock = threading.Lock()
         self._cancel_requested = threading.Event()
         self._latest_payload: dict[str, Any] | None = None
+        self._latest_sequence_source = "visual_event"
+        self._latest_received_at = 0.0
         self._bound_type = ""
         self._bound_target_id = ""
         self._bound_epoch = ""
@@ -177,15 +179,22 @@ class VisualTargetApproachAdapter:
         payload: Mapping[str, Any],
         *,
         now: float | None = None,
+        sequence_source: str = "visual_event",
     ) -> bool:
         if not isinstance(payload, Mapping):
-            return self._delegate.update_visual({}, now=now)
+            return self._delegate.update_visual(
+                {}, now=now, sequence_source=sequence_source,
+            )
         snapshot = dict(payload)
         normalized = self._normalized_payload(snapshot)
-        accepted = self._delegate.update_visual(normalized, now=now)
+        accepted = self._delegate.update_visual(
+            normalized, now=now, sequence_source=sequence_source,
+        )
         if accepted:
             with self._lock:
                 self._latest_payload = snapshot
+                self._latest_sequence_source = sequence_source
+                self._latest_received_at = self._monotonic() if now is None else now
         return accepted
 
     def update_object_detection(
@@ -230,6 +239,7 @@ class VisualTargetApproachAdapter:
                     "tracked_objects": [],
                 },
                 now=now,
+                sequence_source="object_detections",
             )
 
         candidates = [dict(item) for item in objects if isinstance(item, Mapping)]
@@ -260,6 +270,7 @@ class VisualTargetApproachAdapter:
                 "tracked_objects": candidates,
             },
             now=now,
+            sequence_source="object_detections",
         )
 
     def execute_task(
@@ -269,9 +280,17 @@ class VisualTargetApproachAdapter:
         timeout_sec: float,
     ) -> TargetApproachResult:
         """Run one target approach and own any required object stream."""
+        self._cancel_requested.clear()
         behavior_name = str(getattr(ctx, "resolved_behavior_name", ""))
         policy = self._policies.get(behavior_name)
         target = getattr(ctx, "target", None)
+        acquire_labels = list(policy.get("acquire_labels", [])) if policy else []
+        acquiring = target is None and bool(acquire_labels)
+        if acquiring:
+            target = {"target_type": "object"}
+        elif acquire_labels and isinstance(target, Mapping):
+            if self._normalize_label(target.get("label")) not in acquire_labels:
+                return self._invalid(ctx, "object_target_label_not_allowed")
         target_type = (
             self._normalize_target_type(target.get("target_type"))
             if isinstance(target, Mapping)
@@ -287,7 +306,8 @@ class VisualTargetApproachAdapter:
             and target_type in {"animal", "object"}
             and target_type == expected_type
             and (
-                self._require_object_stream
+                acquiring
+                or self._require_object_stream
                 or self._start_object_detection is not None
             )
         )
@@ -297,14 +317,104 @@ class VisualTargetApproachAdapter:
             session_id, reason = self._begin_object_stream(
                 target,
                 timeout_sec,
+                target_labels=acquire_labels or None,
             )
             if not session_id:
                 return self._invalid(ctx, reason)
+        renew_done = threading.Event()
+        renew_errors: list[str] = []
+        renew_thread = None
+        if session_id and acquire_labels:
+            renew_thread = threading.Thread(
+                target=self._renew_object_stream,
+                args=(session_id, acquire_labels, renew_done, renew_errors),
+                daemon=True,
+            )
+            renew_thread.start()
         try:
-            return self._execute_task_impl(unit_config, ctx, timeout_sec)
+            if acquiring:
+                failure = self._acquire_object_target(ctx, policy, timeout_sec)
+                if failure is not None:
+                    return failure
+            outcome = self._execute_task_impl(unit_config, ctx, timeout_sec)
+            if renew_errors:
+                metadata = {**outcome.metadata, "state": "failed", "ready": False,
+                            "reason": renew_errors[0]}
+                self._store_metadata(ctx, metadata)
+                return TargetApproachResult(False, renew_errors[0], metadata)
+            return outcome
         finally:
+            renew_done.set()
+            if renew_thread is not None:
+                # Join before releasing ownership so an in-flight renewal cannot
+                # resurrect the session after its stop request.
+                renew_thread.join()
             if session_id:
                 self._end_object_stream(session_id)
+
+    _OBJECT_STREAM_RENEW_SEC = 10.0
+
+    def _renew_object_stream(
+        self, session_id: str, labels: list[str], done: threading.Event,
+        errors: list[str],
+    ) -> None:
+        while not done.wait(self._OBJECT_STREAM_RENEW_SEC):
+            if self._cancel_requested.is_set() or self._should_stop():
+                return
+            try:
+                ok, reason = self._start_object_detection(
+                    session_id, labels, self._object_detection_rate_hz, 30.0,
+                )
+            except Exception as exc:
+                ok, reason = False, f"object_detection_renew_error:{type(exc).__name__}"
+            if not ok:
+                errors.append(reason or "object_detection_lease_renewal_failed")
+                self.cancel_task()
+                return
+
+    def _acquire_object_target(
+        self, ctx: Any, policy: Mapping[str, Any], timeout_sec: float,
+    ) -> TargetApproachResult | None:
+        """Select one fresh allowed toy, then freeze its full epoch/track ID."""
+        deadline = self._monotonic() + min(self._acquire_timeout_sec, timeout_sec)
+        labels = set(policy["acquire_labels"])
+        min_confidence = float(policy.get("min_confidence", self._bind_min_confidence))
+        max_age_ms = min(float(policy["target_max_age_ms"]), self._bind_max_age_ms)
+        reporter = getattr(ctx, "report_runtime_feedback", None)
+        if callable(reporter):
+            reporter(0.0, self.ACTION_ID, "acquiring_toy", True)
+        while True:
+            if self._cancel_requested.is_set() or self._should_stop():
+                return self._canceled(ctx, "visual_target_acquire_canceled")
+            with self._lock:
+                latest = dict(self._latest_payload or {})
+                elapsed_ms = max(0.0, self._monotonic() - self._latest_received_at) * 1000.0
+            epoch = self._text(latest.get("vision_epoch"))
+            candidates = []
+            for item in self._generic_candidates(latest):
+                raw = item["raw"]
+                full_id = self._text(raw.get("target_id")) or ""
+                age_ms = self._finite(raw.get("last_seen_age_ms", 0.0))
+                prefix = f"{epoch}:object:"
+                if (epoch and raw.get("vision_epoch") == epoch
+                        and item["target_type"] == "object"
+                        and full_id.startswith(prefix) and full_id[len(prefix):]
+                        and self._normalize_label(raw.get("label")) in labels
+                        and self._candidate_is_bindable(raw, min_confidence)
+                        and age_ms is not None and age_ms + elapsed_ms <= max_age_ms):
+                    candidates.append(raw)
+            if candidates:
+                selected = min(candidates, key=lambda raw: (
+                    -float(raw.get("confidence", raw.get("detection_confidence", 0.0))),
+                    str(raw["target_id"]),
+                ))
+                ctx.target = {"target_type": "object", "target_id": selected["target_id"],
+                              "vision_epoch": epoch, "label": selected["label"]}
+                ctx.metadata["acquired_object_target"] = dict(ctx.target)
+                return None
+            if self._monotonic() >= deadline:
+                return self._invalid(ctx, "toy_target_not_found")
+            self._sleep(min(0.05, max(0.0, deadline - self._monotonic())))
 
     def can_execute(self, unit_id: str) -> bool:
         return str(unit_id) in self.ACCEPTED_ACTION_IDS
@@ -376,7 +486,6 @@ class VisualTargetApproachAdapter:
         # the Goal. Keep the base stopped and allow the immutable semantic
         # target a short acquisition window instead of rejecting a
         # temporarily_lost active track immediately.
-        self._cancel_requested.clear()
         self._delegate.cancel_task()
         acquisition_deadline = self._monotonic() + min(
             self._acquire_timeout_sec,
@@ -396,6 +505,7 @@ class VisualTargetApproachAdapter:
                     if self._latest_payload is not None
                     else None
                 )
+                latest_sequence_source = self._latest_sequence_source
             if latest is not None:
                 payload_epoch = self._text(latest.get("vision_epoch"))
                 if payload_epoch is None:
@@ -471,6 +581,11 @@ class VisualTargetApproachAdapter:
         minimum_safe = self._positive(policy.get("minimum_safe_distance_m"))
         if desired is None or minimum_safe is None or desired < minimum_safe:
             return self._invalid(ctx, "invalid_visual_target_policy")
+        outcome = self._execute_bound_target(
+            unit_config, ctx, timeout_sec, bound, payload_epoch, policy,
+        )
+        if outcome is not None:
+            return outcome
         target_max_age_ms = self._positive(
             policy.get("target_max_age_ms", 500.0)
         )
@@ -494,7 +609,10 @@ class VisualTargetApproachAdapter:
             self._bound_target_id = canonical_id
             self._bound_epoch = payload_epoch
             self._bound_distance_mode = distance_mode
-        self._delegate.update_visual(self._normalized_payload(latest))
+        self._delegate.update_visual(
+            self._normalized_payload(latest),
+            sequence_source=latest_sequence_source,
+        )
 
         proxy = copy.copy(ctx)
         proxy.params = {
@@ -584,10 +702,18 @@ class VisualTargetApproachAdapter:
                 self._bound_epoch = ""
                 self._bound_distance_mode = "metric"
 
+    def _execute_bound_target(
+        self, unit_config, ctx, timeout_sec, bound, epoch, policy,
+    ) -> TargetApproachResult | None:
+        """Optional map-navigation backend after the shared target binding."""
+        return None
+
     def _begin_object_stream(
         self,
         target: Mapping[str, Any],
         timeout_sec: float,
+        *,
+        target_labels: list[str] | None = None,
     ) -> tuple[str, str]:
         if self._start_object_detection is None:
             if self._require_object_stream:
@@ -601,8 +727,9 @@ class VisualTargetApproachAdapter:
             target_id = self._meaningful_identifier(target.get("target_id"))
             if target_id is not None and ":" not in target_id:
                 label = self._normalize_label(target_id)
-        if label is None:
+        if label is None and not target_labels:
             return "", "object_target_label_required"
+        labels = list(target_labels) if target_labels else [label]
 
         session_id = f"visual-approach-{uuid.uuid4().hex}"
         requested_epoch = self._text(target.get("vision_epoch")) or ""
@@ -618,10 +745,12 @@ class VisualTargetApproachAdapter:
                 + self._object_detection_lease_margin_sec,
             ),
         )
+        if target_labels:
+            lease_sec = 30.0
         try:
             started, reason = self._start_object_detection(
                 session_id,
-                [label],
+                labels,
                 self._object_detection_rate_hz,
                 lease_sec,
             )
@@ -633,7 +762,7 @@ class VisualTargetApproachAdapter:
                 "Object detection stream started: session=%s labels=%s "
                 "rate=%.2fHz lease=%.2fs",
                 session_id,
-                [label],
+                labels,
                 self._object_detection_rate_hz,
                 lease_sec,
             )

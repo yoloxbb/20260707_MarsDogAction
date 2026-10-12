@@ -44,6 +44,8 @@ from .adapters.go2_sport_backend import (
     Go2ChassisBackend,
     Ros2Go2SportPublisher,
 )
+from .adapters.go2_velocity_bridge import Go2VelocityBridge
+from .adapters.nav2_goal_transport import Ros2Nav2SpinTransport
 from .adapters.lite3_backend import (
     Lite3ChassisBackend,
     Ros2Lite3StatusSubscriber,
@@ -69,15 +71,14 @@ from .adapters.person_nav_approach_adapter import (
     PersonNavApproachAdapter,
     Ros2PersonApproachTransport,
 )
-from .adapters.visual_target_approach_adapter import (
-    VisualTargetApproachAdapter,
-)
+from .adapters.visual_nav_approach_adapter import VisualNavApproachAdapter
 from .adapters.stationary_expression_adapter import (
     StationaryExpressionAdapter,
 )
 from .adapters.uwb_follow_adapter import UwbFollowAdapter
 from .adapters.uwb_follow_action_adapter import UwbFollowActionAdapter
 from .adapters.uwb_roam_adapter import UwbRoamAdapter
+from .adapters.uwb_nav2_roam_adapter import UwbNav2RoamAdapter
 from .behavior_resolver import BehaviorResolver
 from .config_loader import ConfigLoader
 from .debug_publishers import DebugPublishers
@@ -93,6 +94,7 @@ from .sound_player import BehaviorSoundController
 from .stage_executor import StageExecutor, StageResult
 from .stationary_policy import (
     INPLACE_WITH_HUMAN_BEHAVIORS,
+    WAKE_EXPRESSION_BEHAVIOR,
     validate_inplace_plan,
 )
 
@@ -256,6 +258,7 @@ def _shutdown_rclpy_if_ok(
 
 if HAS_ROS2:
     import rclpy
+    from geometry_msgs.msg import Twist
     from rclpy._rclpy_pybind11 import RCLError
     from rclpy.action import ActionServer, CancelResponse, GoalResponse
     from rclpy.callback_groups import ReentrantCallbackGroup
@@ -525,6 +528,13 @@ if HAS_ROS2:
                 self._chassis_backend = Go2ChassisBackend(
                     request_publisher=self._go2_publisher,
                     action_sequences=self._config.get_go2_action_sequences(),
+                    action_plans=self._config.get_go2_action_plans(),
+                    unsupported_actions=go2_config.get("unsupported_actions", {}),
+                    spin_transport=Ros2Nav2SpinTransport(
+                        self,
+                        action_name=str(go2_config["spin"]["action_name"]),
+                        server_timeout_sec=float(go2_config["spin"]["server_timeout_sec"]),
+                    ),
                     publish_rate_hz=chassis_publish_rate,
                     max_linear_x=chassis_max_linear,
                     min_linear_x=float(
@@ -535,10 +545,32 @@ if HAS_ROS2:
                     ),
                     max_angular_z=chassis_max_angular,
                     stop_publish_count=chassis_stop_count,
+                    stand_up_wait_sec=float(go2_config.get("stand_up_wait_sec", 2.5)),
                     should_stop=lambda: self._interrupt.cancel_requested,
                 )
                 self._twist_publisher = self._chassis_backend.twist_publisher
                 controller_adapters["go2"] = self._chassis_backend
+                self.declare_parameter("go2_cmd_vel_bridge_enabled", bool(
+                    go2_config.get("cmd_vel_bridge", {}).get("enabled", True)))
+                self.declare_parameter("go2_cmd_vel_topic", str(
+                    go2_config.get("cmd_vel_bridge", {}).get("topic", "/cmd_vel")))
+                if self.get_parameter("go2_cmd_vel_bridge_enabled").value:
+                    self._go2_velocity_bridge = Go2VelocityBridge(
+                        self._chassis_backend,
+                        timeout_sec=float(go2_config.get("cmd_vel_bridge", {}).get("timeout_sec", 0.5)),
+                    )
+                    self._go2_velocity_subscription = self.create_subscription(
+                        Twist, str(self.get_parameter("go2_cmd_vel_topic").value),
+                        lambda msg: self._go2_velocity_bridge.receive(TwistCommand(
+                            msg.linear.x, msg.linear.y, msg.angular.z)), 1,
+                        callback_group=ReentrantCallbackGroup(),
+                    )
+                    self._go2_velocity_timer = self.create_timer(
+                        0.1, self._go2_velocity_bridge.tick,
+                        callback_group=ReentrantCallbackGroup(),
+                    )
+                    self.get_logger().info(
+                        "Go2 cmd_vel preparation bridge enabled; stop the standalone twist_bridge")
                 self.get_logger().info(
                     "Go2 SportMode backend enabled: "
                     f"topic={self.get_parameter('go2_request_topic').value}, "
@@ -664,9 +696,22 @@ if HAS_ROS2:
             )
 
             # ── Session-scoped UWB owner following ───────────────────
+            navigation_config = self._config.navigation_config
+            self.declare_parameter(
+                "navigation_action_name",
+                str(
+                    navigation_config.get(
+                        "action_name",
+                        "/navigate_to_pose",
+                    )
+                ),
+            )
             uwb_config = self._config.uwb_follow_config
             self.declare_parameter(
                 "uwb_follow_enabled", bool(uwb_config.get("enabled", True))
+            )
+            self.declare_parameter(
+                "uwb_roam_execution_mode", str(uwb_config.get("roam_execution_mode", "legacy"))
             )
             self.declare_parameter(
                 "uwb_follow_setup_script",
@@ -706,13 +751,26 @@ if HAS_ROS2:
                     # /cmd_vel, and a second publisher would fight it.  See
                     # adapters/uwb_follow_action_adapter.py.
                     ros_interface = uwb_config.get("ros_interface") or {}
-                    self._uwb_roam_adapter = UwbRoamAdapter(
+                    roam_mode = str(self.get_parameter("uwb_roam_execution_mode").value)
+                    roam_options = dict(
                         node=self, backend=self._chassis_backend,
                         should_stop=lambda: self._interrupt.cancel_requested,
-                        brake_ready=lambda: self._uwb_follow_adapter.brake_ready(),
                         brake_chain=lambda: self._uwb_follow_adapter.brake_chain(),
                         arm_chain=lambda: self._uwb_follow_adapter.arm_chain(),
                     )
+                    if roam_mode == "nav2":
+                        self._uwb_roam_adapter = UwbNav2RoamAdapter(
+                            **roam_options,
+                            service_name=str(ros_interface.get("navigation_goal_service", "/go2/generate_navigation_goal")),
+                            nav_action=str(self.get_parameter("navigation_action_name").value),
+                        )
+                    elif roam_mode == "legacy":
+                        self._uwb_roam_adapter = UwbRoamAdapter(
+                            **roam_options,
+                            brake_ready=lambda: self._uwb_follow_adapter.brake_ready(),
+                        )
+                    else:
+                        raise ValueError("uwb_roam_execution_mode must be nav2 or legacy")
                     controller_adapters["uwb_roam"] = self._uwb_roam_adapter
                     self._uwb_follow_adapter = UwbFollowActionAdapter(
                         enabled=True,
@@ -795,7 +853,7 @@ if HAS_ROS2:
                             uwb_config.get("stop_publish_count", 3)
                         ),
                         publish_twist=self._twist_publisher,
-                        prepare_motion=None,
+                        prepare_motion=self._chassis_backend.prepare_navigation,
                         finish_motion=finish_motion,
                         should_stop=lambda: self._interrupt.cancel_requested,
                         auto_resume=False,
@@ -1017,15 +1075,7 @@ if HAS_ROS2:
                 "navigation_enabled",
                 bool(navigation_config.get("enabled", False)),
             )
-            self.declare_parameter(
-                "navigation_action_name",
-                str(
-                    navigation_config.get(
-                        "action_name",
-                        "/navigate_to_pose",
-                    )
-                ),
-            )
+
             self.declare_parameter(
                 "navigation_frame_id",
                 str(navigation_config.get("frame_id", "map")),
@@ -1428,7 +1478,7 @@ if HAS_ROS2:
                 callback_group=self._vision_object_callback_group,
             )
             self._visual_target_approach_adapter: (
-                VisualTargetApproachAdapter | None
+                VisualNavApproachAdapter | None
             ) = None
             visual_behavior_policies = dict(
                 visual_target_config["behavior_policies"]
@@ -1448,6 +1498,7 @@ if HAS_ROS2:
             if (
                 bool(visual_target_config.get("enabled", True))
                 and self._twist_publisher is not None
+                and VisionTask is not None
             ):
                 visual_target_max_linear = min(
                     chassis_max_linear,
@@ -1458,8 +1509,16 @@ if HAS_ROS2:
                     float(visual_target_config["max_angular_z"]),
                 )
                 self._visual_target_approach_adapter = (
-                    VisualTargetApproachAdapter(
+                    VisualNavApproachAdapter(
                         publish_twist=self._twist_publisher,
+                        transport=Ros2PersonApproachTransport(
+                            self,
+                            nav_action=str(self.get_parameter("navigation_action_name").value),
+                            behavior_tree=str(
+                                self._config.config_dir / "navigate_to_visual_target.xml"
+                            ),
+                        ),
+                        chassis_backend=self._chassis_backend,
                         behavior_policies=visual_behavior_policies,
                         publish_rate_hz=float(
                             visual_target_config["publish_rate_hz"]
@@ -1562,15 +1621,14 @@ if HAS_ROS2:
                         ),
                     )
                 )
-                controller_adapters["visual_target_approach"] = (
+                controller_adapters["visual_nav_approach"] = (
                     self._visual_target_approach_adapter
                 )
                 self.get_logger().info(
-                    "Visual target approach enabled: "
+                    "Visual target Nav2 approach enabled: "
                     f"behaviors={len(visual_behavior_policies)}, "
-                    f"max_linear={visual_target_max_linear:.3f}m/s, "
-                    "human_range_mode=bbox_height, "
-                    "nonhuman_range_mode=metric, "
+                    "localization=locate_target_once, "
+                    "human_min_stand_off=1.5m, "
                     "object_stream=session_v2"
                 )
             elif bool(visual_target_config.get("enabled", True)):
@@ -1808,6 +1866,7 @@ if HAS_ROS2:
                     getattr(self, "_uwb_roam_adapter", None),
                     self._uwb_follow_adapter,
                     getattr(self, "_person_nav_approach_adapter", None),
+                    getattr(self, "_visual_target_approach_adapter", None),
                 )
             )):
                 self.get_logger().error("Rejected goal: controller terminal unknown; recovery required")
@@ -2132,16 +2191,21 @@ if HAS_ROS2:
                         reward=-1.0,
                     )
             try:
+                if isinstance(self._chassis_backend, Go2ChassisBackend):
+                    self._chassis_backend.begin_behavior()
                 self._current_priority = int(
                     getattr(request, "priority_level", 0)
                 )
                 return await self._execute_behavior(goal_handle)
             finally:
                 self._behavior_sounds.stop()
-                if request.behavior_name in INPLACE_WITH_HUMAN_BEHAVIORS:
+                if (request.behavior_name in INPLACE_WITH_HUMAN_BEHAVIORS
+                        or request.behavior_name == WAKE_EXPRESSION_BEHAVIOR):
                     self._stationary_expression_adapter.cancel_step()
                     if self._chassis_backend is not None:
                         self._chassis_backend.hold_position()
+                if isinstance(self._chassis_backend, Go2ChassisBackend):
+                    self._chassis_backend.end_behavior()
                 self._behavior_execution_lock.release()
                 with self._goal_reservation_lock:
                     if self._reserved_goal_id == str(request.goal_id):
@@ -2217,7 +2281,8 @@ if HAS_ROS2:
             )
 
             # ── Step 3: Get template & stages ──────────────────────────
-            template = self._config.get_behavior_template(canonical)
+            template = self._config.get_behavior_template(
+                canonical, chassis_type=str(self.get_parameter("chassis_type").value))
             if template is None:
                 self.get_logger().error(
                     f"[{gid}] No template for: {canonical}"
@@ -2568,6 +2633,29 @@ if HAS_ROS2:
                 ctx, stage_results, success_condition,
             )
 
+            if behavior_result.success and isinstance(self._chassis_backend, Go2ChassisBackend):
+                ready = self._chassis_backend.finish_behavior(ctx, canonical)
+                # Navigation terminal Results stay authoritative. Readiness
+                # cleanup is separately reported, never a pose-based override.
+                routes = self._config.get_controller_routes("go2")
+                navigation_executed = (
+                    self._mobility_adapter is not None
+                    and self._mobility_adapter.waypoint_for_behavior(canonical) is not None
+                ) or any(routes.get(unit) in {
+                    "behavior_mobility", "visual_nav_approach", "person_nav_approach",
+                    "wake_orientation", "uwb_follow",
+                } or any(item.get("command") == "nav2_spin" for item in
+                         self._config.get_go2_action_sequences().get(unit, []))
+                    for unit in ctx.executed_units)
+                if not ready and not navigation_executed:
+                    self._interrupt.apply_to_context(ctx)
+                    ctx.cancel_requested = ctx.cancel_requested or goal_handle.is_cancel_requested
+                    behavior_result.success = False
+                    behavior_result.status = "canceled" if ctx.cancel_requested else "controller_error"
+                    behavior_result.reason = self._chassis_backend.last_error
+                    behavior_result.message = behavior_result.reason
+                    behavior_result.reward = -1.0
+
             duration = time.time() - behavior_started_wall
             self.get_logger().info(
                 f"[{gid}] Result: {behavior_result.status} "
@@ -2594,6 +2682,11 @@ if HAS_ROS2:
 
             # ── Metadata for behaviors that report internal state ──────
             metadata: dict[str, object] = {}
+            for key in ("go2_action", "go2_readiness"):
+                if isinstance(ctx.metadata.get(key), dict):
+                    metadata[key] = dict(ctx.metadata[key])
+            if isinstance(ctx.metadata.get("go2_actions"), list):
+                metadata["go2_actions"] = [dict(item) for item in ctx.metadata["go2_actions"]]
             target_approach_metadata = ctx.metadata.get("target_approach")
             if isinstance(target_approach_metadata, dict):
                 metadata["target_approach"] = dict(
@@ -2622,6 +2715,10 @@ if HAS_ROS2:
             ):
                 battery_level = self._read_battery_level()
                 metadata["energyValue"] = battery_level
+                if isinstance(self._chassis_backend, Go2ChassisBackend):
+                    metadata["energyValue_source"] = "configured_default"
+                    if canonical == "recharge":
+                        metadata["charging_completed"] = False
                 if canonical == "recharge" and isinstance(
                     lite3_action_metadata, dict
                 ):

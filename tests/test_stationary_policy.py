@@ -124,6 +124,11 @@ def test_legal_inplace_plan_executes_expression_successfully(
 
     result = executor.execute_stage(template["stages"][0], ctx)
 
+    if all(loader.get_controller_routes()[candidate["unit_id"]] == "unsupported"
+           for candidate in template["stages"][0]["candidates"]):
+        assert not result.success and "go2_unsupported_action:" in result.message
+        assert executed == [] and ctx.executed_units == []
+        return
     assert result.success
     assert ctx.completed_stages == ["expression"]
     assert len(ctx.executed_units) == 1

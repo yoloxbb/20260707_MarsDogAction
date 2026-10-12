@@ -181,16 +181,19 @@ lite3 -> controller_routes.yaml + lite3_actions.yaml -> /simple_cmd + /cmd_vel
 ### Go2 路由
 
 `Go2ChassisBackend` 按 `go2_sport.yaml` 把精确动作转换为官方高层 SportMode
-请求。持续 `Move` 默认以 10 Hz 刷新，结束、失败、取消和急停均冗余发送
-`StopMove`。过来、靠近和返回主人不是开环 SportMode 序列，而是覆盖到
-`visual_target_approach`，由同一 Vision Track 闭环生成 Move/StopMove。
+请求，或将计圈旋转交给 Nav2 `/spin`。持续 `Move` 默认以 10 Hz 刷新，结束、失败、取消
+和急停冗余发送 `StopMove`。过来、靠近和返回主人走 `person_nav_approach`，
+通过单次视觉定位和真实 Nav2 Result 完成避障接近。
 
-Go2 的 182 个动作有效路由为：171 个 `go2`、4 个
-`visual_target_approach`、3 个 `behavior_mobility`，以及 UWB、唤醒转向、语音
-目标接近和无身体动作的 `quiet`。SportMode 没有等价能力的翻滚、张嘴、叼取、
-面部和生物动作使用 `fidelity: proxy` 的保守身体表达；这只表示动作序列执行
-完成，不声称真实物体操作或生物动作完成。Go2 的部署、完整映射和验收边界见
-[GO2_ROS2_INTEGRATION.md](GO2_ROS2_INTEGRATION.md)。
+191 个动作中，179 个 Go2 计划明确区分原生等价、组合和安全代理，
+其余 12 个保留共享控制器或音频策略路由。原先 85 个不支持动作按用户授权使用安全替代，
+代理结果明确记录实际动作，不宣称完成原搬运、接触、充电或生物任务；禁用翻腾/跳扑接口。
+完整成功行为链末尾恢复平衡，显式姿态/停止命令除外。内置 `/cmd_vel` 桥接共用后端门禁，
+启用时停止独立 `twist_bridge`，避免绕过准备或重复发送速度。
+睡前三圈下发 `target_yaw=6π`，只认关联 Spin Goal 的真实终态；显式起身与 BalanceStand
+仅为运动准备，不通过姿态、速度或距离改判导航结果。SportMode 本身仅发布并等待，
+没有固件 ACK 或物理动作完成确认。
+详见 [Go2 集成](GO2_ROS2_INTEGRATION.md) 和 [191 项动作核对表](GO2_ACTION_AUDIT.csv)。
 
 ### 追随路由
 
@@ -258,21 +261,25 @@ VisionTask 对该目标执行一次 `locate_person_once`，SLAM 返回有效地�
 Action 最多发送一次 Nav2 `/navigate_to_pose`；内层终态未知时锁定恢复状态。
 
 普通 Social / Exploration 目标使用独立的
-`ACT_APPROACH_VISUAL_TARGET -> visual_target_approach`，不复用也不放宽语音呼叫者
+`ACT_APPROACH_VISUAL_TARGET -> visual_nav_approach`，不复用也不放宽语音呼叫者
 契约。它先把 Tree 的语义目标唯一绑定到当前视觉 epoch 中的稳定 track，再使用
-配置的距离模式接近；成功停车后 StageExecutor 才进入原互动、检查或人物情绪
+Vision `locate_target_once` 冻结原图 ROI，通过 SLAM 生成可达地图目标。Action
+复用“过去”的 Nav2 传输与底盘钩子，只发送一个 Goal；真实终态成功且底盘收稳后
+StageExecutor 才进入原互动、检查或人物情绪
 表达 Stage。13 个 Social / Exploration 行为和六个普通 `express*WithHuman` 的
 类型和停止条件白名单由 `visual_target_approach.yaml` 管理，`exploreRoom` 不在
 白名单内。
 
-`unhappy`、`miss_owner`、`farewell_leave` 复用同一不可变视觉目标锁，但通过
-每行为策略覆盖线速度、加速度、框高目标和到达保持。`farewell_leave` 在保持期
-持续消费视觉帧，锁定主人走远时恢复接近；其后定制表达使用所选平台动作，
+`unhappy`、`miss_owner`、`farewell_leave` 复用同一不可变视觉目标锁，并要求
+原图目标 `identity=owner`。人体地图停止距离至少 1.5 m；冻结地图目标后不恢复
+视觉跟随，旧线速度、框高与到达保持参数只保留供兼容控制器测试。
+其后定制表达使用所选平台动作，
 不能冒充独立头部、尾部或四足控制器验收。
 
-所有前台闭环在行为执行锁内独占 `/cmd_vel`；后台 attention 的“计算 + 发布”也在
-同一锁内完成，避免检查后再发布的竞态。目标闭环另以执行 generation 和视觉
-revision 串行门保护非零 Twist，保证取消/急停返回后不会再出现迟到 MOVE。
+前台行为在执行锁内独占底盘控制权；后台 attention 的“计算 + 发布”也在
+同一锁内完成。地图接近由 Nav2 产生速度，视觉目标适配器只发布停止指令。
+取消请求传给关联 Nav2 Goal；接受状态或 Result 未知时禁止替代行为，
+不提前执行底盘模式收尾。原速度闭环的 generation/revision 门保留供兼容测试。
 
 行为音频由 `sound_config.yaml` 的精确 `behavior_sounds` 映射选择。固定点或随机点
 导航成功后，音频与首个 Stage 同时开始，且同一时刻只保留一个播放进程；行为

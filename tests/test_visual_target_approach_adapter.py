@@ -66,7 +66,7 @@ def test_visual_approach_platforms_apply_tighter_linear_clamps() -> None:
     assert approach["distance_hysteresis_m"] == 0.10
     assert approach["reacquire_min_consecutive_frames"] == 3
     assert approach["acquire_timeout_sec"] == 5.0
-    assert approach["object_detection_stream"]["confidence"] == 0.35
+    assert approach["object_detection_stream"]["confidence"] == 0.25
 
 
 def _adapter(
@@ -274,6 +274,61 @@ def test_nonhuman_approach_owns_session_stream_until_stopped() -> None:
     assert commands and commands[-1] == TwistCommand()
 
 
+def test_visual_and_object_sequences_survive_stream_switches_independently() -> None:
+    clock = FakeClock()
+    adapter = _adapter(
+        [], clock, require_object_stream=True,
+        start_object_detection=lambda *args: (True, ""),
+        stop_object_detection=lambda session: None,
+    )
+    target = {"vision_epoch": "vision-1", "label": "delivery box"}
+    assert adapter.update_visual(_payload("human", sequence=6984), now=clock.now)
+    session, reason = adapter._begin_object_stream(target, 2.0)
+    assert session and not reason
+    assert adapter.update_object_detection(_object_stream_packet(session, sequence=1))
+    assert adapter._latest_payload["vision_epoch"] == "vision-1"
+    assert adapter._latest_payload["tracked_objects"][0]["target_id"] == "vision-1:object:7"
+    assert not adapter.update_object_detection(_object_stream_packet(session, sequence=1))
+    assert not adapter.update_visual(_payload("human", sequence=6985))
+    assert adapter.update_object_detection(_object_stream_packet(session, sequence=8000))
+    adapter._end_object_stream(session)
+
+    assert adapter.update_visual(_payload("human", sequence=6985))
+    assert not adapter.update_visual(_payload("human", sequence=6985))
+    assert not adapter.update_visual(_payload("human", sequence=6984))
+    next_session, reason = adapter._begin_object_stream(target, 2.0)
+    assert next_session != session and not reason
+    assert not adapter.update_object_detection(_object_stream_packet(session, sequence=8001))
+    assert not adapter.update_object_detection(_object_stream_packet(next_session, sequence=7999))
+    assert adapter.update_object_detection(_object_stream_packet(next_session, sequence=8001))
+    adapter._end_object_stream(next_session)
+    assert not adapter.update_object_detection(_object_stream_packet(next_session, sequence=8002))
+    assert adapter.update_visual(_payload("human", sequence=6986))
+
+
+def test_object_stream_error_uses_its_own_sequence_and_clears_snapshot() -> None:
+    clock = FakeClock()
+    adapter = _adapter(
+        [], clock, require_object_stream=True,
+        start_object_detection=lambda *args: (True, ""),
+        stop_object_detection=lambda session: None,
+    )
+    assert adapter.update_visual(_payload("human", sequence=6984), now=clock.now)
+    session, _ = adapter._begin_object_stream(
+        {"vision_epoch": "vision-1", "label": "delivery box"}, 2.0,
+    )
+    packet = _object_stream_packet(session, sequence=1)
+    packet.update(status="error", error="detector failed", objects=[])
+    assert adapter.update_object_detection(packet)
+    assert adapter._latest_payload["tracked_objects"] == []
+    assert adapter.update_object_detection(_object_stream_packet(session, sequence=2))
+    assert not adapter.update_object_detection(packet)
+    packet["sequence"] = 3
+    assert adapter.update_object_detection(packet)
+    assert adapter._latest_payload["tracked_objects"] == []
+    adapter._end_object_stream(session)
+
+
 def test_required_object_stream_fails_closed_when_client_is_missing() -> None:
     commands: list[TwistCommand] = []
     clock = FakeClock()
@@ -432,7 +487,7 @@ def test_animal_approach_distances_are_close_but_safety_guarded() -> None:
     assert policies["inviteAnimalToPlay"]["min_confidence"] == 0.40
     assert policies["inviteAnimalToPlay"]["target_lost_timeout_sec"] == 1.8
     assert policies["inspectObject"]["target_lost_timeout_sec"] == 1.8
-    assert policies["inspectObject"]["min_confidence"] == 0.35
+    assert policies["inspectObject"]["min_confidence"] == 0.25
     assert (
         policies["testAnimalBoundary"]["desired_distance_m"]
         > policies["greetAnimal"]["desired_distance_m"]
@@ -713,7 +768,7 @@ def test_nonhuman_thresholds_accept_moderate_confidence_without_weakening_humans
         _payload(
             "object",
             distance_m=0.9,
-            confidence=0.40,
+            confidence=0.25,
             label="box",
         ),
         now=object_clock.now,
@@ -728,7 +783,7 @@ def test_nonhuman_thresholds_accept_moderate_confidence_without_weakening_humans
     assert object_outcome.success
     assert object_outcome.metadata["effective_policy"][
         "target_min_confidence"
-    ] == 0.35
+    ] == 0.25
     assert all(command.is_zero for command in object_commands)
 
     human_commands: list[TwistCommand] = []
@@ -1308,7 +1363,7 @@ def test_behavior_templates_prepend_required_approach_and_exclude_room_roam() ->
     room = loader.get_behavior_template("exploreRoom")
     assert [stage["stage_id"] for stage in room["stages"]] == ["explore"]
     assert loader.controller_routes["routes"]["ACT_APPROACH_VISUAL_TARGET"] == (
-        "visual_target_approach"
+        "visual_nav_approach"
     )
     assert loader.action_catalog["ACT_APPROACH_VISUAL_TARGET"][
         "requires_controller"
@@ -1360,7 +1415,7 @@ def test_failed_approach_prevents_following_expression_stage(
         action_catalog=loader.action_catalog,
         controller_routes=loader.get_controller_routes(),
         controller_adapters={
-            "visual_target_approach": RejectingAdapter(),
+            "visual_nav_approach": RejectingAdapter(),
         },
     )
     ctx = _context(behavior_name, target_type, target_id)

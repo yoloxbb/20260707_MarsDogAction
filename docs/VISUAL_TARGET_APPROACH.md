@@ -1,131 +1,114 @@
-# 视觉目标先接近后动作
+# 视觉目标定位后由 Nav2 接近
 
-## 执行链
-
-针对小车，具有明确人、动物或物体目标的行为使用统一两阶段结构：
+具有明确人、动物或物体目标的行为使用以下链路：
 
 ```text
-Tree /execute_behavior Goal
-  behavior_name + params_json.target
-    -> target_approach Stage
-       ACT_APPROACH_VISUAL_TARGET
-         -> controller_routes.yaml: visual_target_approach
-         -> 人体读取 /perception/visual_event
-         -> 动物/物体通过 VisionTask.set_object_detection 独占租约
-         -> /perception/vision/object_detections v2 稳定轨迹与公制距离
-         -> 受限 /cmd_vel 闭环接近并停车
-    -> 原 interact / greet / invite / inspect Stage
+Tree /execute_behavior: behavior_name + params_json.target
+  -> target_approach: ACT_APPROACH_VISUAL_TARGET -> visual_nav_approach
+  -> 绑定唯一稳定的 vision_epoch + target_id
+  -> VisionTask.locate_target_once
+  -> 原图 ROI + 对齐深度 + TF + 可达地图目标搜索
+  -> Action 发送一次 /navigate_to_pose Goal
+  -> 等待真实 Nav2 Result，确认底盘收稳
+  -> 原 expression / interact / greet / invite / inspect 阶段
 ```
 
-第一个 Stage 必须成功，第二个 Stage 才会执行。它不调用 Nav2，也不复用
-`ACT_INTERACT_APPROACH_VOICE_CALLER` 的语音会话严格契约。
+Tree 保持现有物体/人物分流。Action 复用“过去”的 Nav2 传输与底盘控制权钩子，
+接近过程的速度、路径规划和避障由 Nav2 管理。视觉适配器只发布停止指令。
+定位或规划成功不是导航到达；接近失败会阻止后续动作。
 
-## 行为与距离
+## 目标绑定与单次定位
 
-| 目标 | 行为 | 停止条件 | 最小安全距离 |
-|---|---|---:|---:|
-| 人 | `seekHumanInteraction`、`seekInteraction`、`inviteHumanToPlay` | 人体框目标高度 0.80、到达阈值 0.76（归一化） | 模型框代理，不声明米制距离 |
-| 人物情绪 | 六个普通 `express*WithHuman` | 人体框目标高度 0.80、到达阈值 0.76（归一化） | 模型框代理，不声明米制距离 |
-| 主人不开心陪伴 | `unhappy` | 框高 0.82、阈值 0.79；线速度上限 0.30 m/s（0.45 增益实际更缓）；到达保持 1.5 s | 0.80 m 配置硬下限；框高模式不声明实测米制距离 |
-| 想念主人 | `miss_owner` | 框高 0.84、阈值 0.81；线速度上限 0.30 m/s | 0.80 m 配置硬下限；框高模式不声明实测米制距离 |
-| 主人离开 | `farewell_leave` | 框高 0.76、阈值 0.72；到达后持续观察 3.0 s | 0.80 m 配置硬下限；框高模式不声明实测米制距离 |
-| 动物边界观察 | `testAnimalBoundary` | 1.50 m | 1.00 m |
-| 动物互动 | `greetAnimal`、`inviteAnimalToPlay` | 1.20 m | 0.80 m |
-| 物体 | 七个 `inspect*` 行为 | 0.90 m | 0.55 m |
+Goal 的 `target` 至少携带 `target_type` 和 `target_id`。兼容旧语义目标时，
+Action 在当前视觉快照中唯一绑定轨迹，再将完整稳定 ID 交给 Vision。
+上游已经指定完整 ID 时禁止通过标签切换到另一个轨迹。
+人体读取 `/perception/visual_event`；动物和物体保留 `set_object_detection`
+租约及对应 session 的 `/perception/vision/object_detections` v2，用于定位前获取新鲜轨迹。
+Action 分别检查这两个 topic 的 `sequence`，同一 topic 的重复或乱序消息会被拒绝；
+切换检测 session 不清空序号记录。两路保留原 `vision_epoch` 和 `target_id`，
+Vision 重启后两路一起拒绝旧 epoch，并在新 epoch 内重新计数。
+Vision 使用物体推理自身的原图尺寸、header 和 source_sequence，不使用更新的人体帧。
+仅当前原图中实际检测到的目标允许生成导航点；预测旧框、失鲜、人脸、切分双目画面拒绝定位。
 
-米制目标在“期望距离 + 0.12 m deadband”内进入到达保持阶段，因此动物边界
-观察实际约在 1.62 m 内停车，问候和邀玩约在 1.32 m 内停车。最低安全距离是
-独立硬约束；检测距离达到该值时立即停车，不会为了追求期望距离继续前进。
+一次成功定位冻结地图目标，随后只执行一个 Nav2 Goal，不循环发点或追随移动目标。
+定位成功返回 `navigation_required=false` 时已在安全距离，直接完成接近阶段。
 
-`exploreRoom` 是没有具体视觉目标的空间探索，因此不加入接近 Stage。
-六个熟悉物体行为必须以自己的具体名称发送给 Action；不得覆盖为未注册的
-`inspectKnownObject`。
+## 距离和预算
 
-`farewell_leave` 的 3 秒不是盲走计时器：视觉目标处于到达区时底盘保持零速；
-若同一主人 Track 在窗口内走远，Controller 会取消到达计时并恢复受限接近；目标
-丢失、换 ID 或失鲜则停车并失败。到达保持结束后才执行
-`ACT_OWNER_GOING_OUT` 的短暂关注代理。
+| 目标 | 行为 | 地图目标 stand-off |
+|---|---|---:|
+| 人 | 社交、普通 WithHuman 情绪、主人定制行为 | 至少 1.5 m |
+| 动物 | testAnimalBoundary | 1.5 m |
+| 动物 | greetAnimal / inviteAnimalToPlay | 1.2 m |
+| 物体 | 七个 inspect* 行为 | 0.9 m |
 
-为避免四足底盘在检测边界附近反复起步，目标失效时仍会立即发布一组冗余停止，
-但保持停止期间不再按每帧重复发送。之后必须连续收到 3 个新的有效快照才恢复
-运动；同一快照被控制循环重复读取不计数。到达确认另有迟滞区：米制距离需比进入
-阈值再远 0.10 m，人体框高需比进入阈值再缩小 0.03，才会退出停止区。
-
-`unhappy`、`miss_owner` 的贴近程度与速度来自每行为策略。定制表达 Stage 本身不
-再向前推进，只用低速侧移或原地摆动代理低头贴靠、摇尾和蹭靠，最后归零。
-轮式底盘代理不等于独立头部、尾部或四足姿态执行器的真机动作验收。
-三个主人行为还要求 Goal 明确提供 `target.identity=owner`；身份缺失或不是主人时
-返回 `visual_target_identity_mismatch`，不会退化为任意可见人体。
-
-## 目标绑定
-
-Goal 至少需要：
+上述距离是未传参时的默认值，不是所有视觉目标统一固定为 1.5 米。
+Tree 可以在每个 `/execute_behavior` Goal 的 `params_json` 顶层传入
+`stand_off_distance_m`，覆盖该次视觉导航的距离，单位米。此值不写回行为配置，
+也不影响下一次未传参的 Goal。例如接近当前视觉选中的玩具：
 
 ```json
 {
   "target": {
-    "target_type": "human | animal | object",
-    "target_id": "Tree 选中的目标 ID"
-  }
+    "target_type": "object",
+    "vision_epoch": "实际视觉 epoch",
+    "target_id": "实际视觉 epoch:object:实际轨迹 ID"
+  },
+  "stand_off_distance_m": 0.2
 }
 ```
 
-如果 Tree 同时提供 `vision_epoch`，Action 要求它与当前视觉流完全一致。普通
-Need 目标暂时没有统一携带 epoch 时，Action 只在最新有效快照内通过
-`target_id`、`track_id`、`identity` 或标签找到候选，并要求最终能固定到唯一的
-稳定 `target_id/track_id`。同名多目标无法唯一绑定时直接失败，不会临时选择另
-一个目标。
+对应行为可用 `inspectFamiliarPlayItem`。必须使用实际新鲜视觉目标的 ID。
+Tree 的 `NEED_EXPLORATION_TRIGGERED` 七个物体分流路由均配置 `0.2 m`：
+玩具、垃圾桶、快递箱、纸巾、门、狗粮和陌生物体。
+`empty -> exploreRoom` 没有视觉接近阶段。
+其他调用未传此字段时仍采用 Action 的 `0.9 m` 默认值。
+Action 将距离转为 VisionTask `locate_target_once.params_json.stand_off_distance`，
+Vision 再传入 `person_3d_localization/LocateFromBbox.stand_off_distance`；
+SLAM 按本次距离生成地图目标，Action 使用该目标导航。
+`come_to_owner`（“过来”）沿现有 `person_nav_approach` 路由，未传距离仍为 1.5 米，
+也使用相同的上层字段 `stand_off_distance_m`。
 
-Goal 到达瞬间若选定目标只是 `temporarily_lost`，Controller 保持零 Twist，并在
-`acquire_timeout_sec` 内等待同一稳定目标或同一唯一身份恢复为 `tracking`。重捕获
-后才开始转向和前进；epoch 改变、目标歧义、取消或等待超时则失败。
+显式传入值必须是有限数值，且至少达到
+`max(行为 minimum_safe_distance_m, 目标类型最低距离)`。
+类型最低距离为人 1.5 米、动物 0.8 米、物体 0.2 米；例如
+`testAnimalBoundary` 的行为最低距离为 1.0 米，不能传 0.9 米。
+过小距离返回 `unsafe_stand_off_distance`，空值、布尔值、非数值及 NaN/Inf
+返回 `invalid_stand_off_distance`，均不会请求定位或启动导航。
+本参数只控制到已选目标的停靠半径，不会切换目标。
 
-普通 Social 的 `check_person` 兼容结果可能只携带身份名和人数：已知身份只绑定
-视觉生产者当前选择的同身份 `active_target`；身份为 `unknown` 时也只绑定该
-`active_target` 的稳定 Track，不从 `human_candidates` 随机选人。因此多人场景
-仍保持 Vision 已有的确定性选择；`active_target` 失鲜、无稳定 ID 或非 tracking
-时直接失败并保持零速度。
+Vision 强制人体 body 几何、motion_eligible=true、置信度至少 0.5；动物至少 0.4，
+物体至少 0.25。目标总年龄最多 0.35 秒。定位源图年龄单独由 Vision 的
+`person_localization.max_source_age_sec` 控制；当前部署为 1.0 秒，以覆盖相机传输与
+模型推理延迟，未配置时仍为 0.35 秒。原图 Header 不变，SLAM 继续匹配历史深度和 TF。
+停止距离是地图目标搜索参数，
+实际到达精度由 Nav2 配置与底盘决定。旧 bbox 高度、速度增益和迟滞配置仅保留作兼容测试参数。
 
-## 运动安全
+`ACT_APPROACH_VISUAL_TARGET` 上限 160 秒，包含定位、导航、收尾，仍受外层 Goal 剩余预算限制。
+提高这个动作上限不会自动增加 Tree 的行为预算；当前探索事件没有单独设置
+`timeout_sec`，部署时仍使用 Tree 按优先级给出的默认预算。
+定位、深度、TF、可达目标或 Nav2 不可用时失败，不回退到视觉速度接近。
 
-- 人体社交策略显式使用锁定人体的模型框高度闭环，不把框高伪装成米制距离；
-- 动物和物体只消费当前 Action session 所有的物体检测 v2 流，并必须提供
-  有限正数 `distance_m` 且 `range_valid=true`；
-- 动物策略使用 0.40 的专用置信度门槛，物体检查使用 0.35，人物仍使用全局
-  0.50；Action 启动 Vision 连续物体检测租约时也显式请求 0.35，避免生产者和
-  消费者门槛不一致；
-- 连续检测从空闲状态启动时允许最多等待 5 秒首帧；等待期间底盘始终保持零速度；
-- 目标短暂丢失时立即发布一组冗余停车，保持停止期间合并重复请求；最多等待策略
-  指定的丢失时限，并只允许相同 Track 连续稳定 3 个新快照后恢复，不会盲走或
-  改追其他目标；
-- 动物/物体成功、失败、取消和抢占出口都关闭相同 session 的检测租约；
-- 横向偏差较大时只原地对准，不向前；
-- 目标缺失、类型不符、歧义、低置信、非 tracking、失鲜或 epoch 改变时停车；
-- 取消、抢占、超时、异常、完成和急停均发布冗余零 Twist；
-- 运动命令仍受执行 generation、视觉 revision、总超时和视觉新鲜度共同约束；
-- 底盘必须保留 `/cmd_vel` 超时看门狗作为硬件侧最后防线。
+`inspectFamiliarPlayItem` 在 `target_approach` 成功并停稳后，先执行必需的
+`arrival_expression`，随机选择低头抬身、左右观察抬身或降低机身后左右观察之一，
+再进入原来的 `inspect` 玩具动作池。组合复用完整 `ACT_ROAM_*` 硬件序列，
+本行为每套上限 12 秒，包含姿态回零和站立空闲确认；仍与导航、玩具动作共享
+上游 Goal 的总预算，不自动延长总时限。接近或组合失败、取消、超时会中止后续阶段。
+Lite3 使用机身俯仰、偏航和高度变化，组合期间只发布零速度；不声称具备真实
+嗅闻、咬取或飞盘拾取能力。原六个玩具候选及其语义 ID 保留。
 
-配置入口是 `config/visual_target_approach.yaml`。物理运行需
-所选底盘的 `go2_enabled:=true` 或 `lite3_enabled:=true`；底盘未启用时该 Controller 不安装，行为会明确失败，
-不会用 mock 动作冒充接近。
+`exploreRoom` 没有具体目标，仍直接执行探索动作。
+`inspectDogFood` 到视觉选中的狗粮目标后执行原六步仪式，不再先导航到固定厨房。
+进食行为的固定厨房导航保持原配置。
 
-## 距离与人体框排查
+## 生命周期与部署
 
-动物或物体行为返回 `metric_distance_unavailable` 时，表示目标已经绑定成功，
-但 Vision 没有提供有效米制距离。先确认 RealSense 同时开启深度和对齐深度；
-不能使用 `enable_depth:=false`：
+取消请求传递给当前 Nav2 Goal，只有真实终态才能释放底盘控制权。
+发送接受状态或 Result 不明时保留关联 Goal 和 recovery_required，禁止普通替代行为，
+也不执行 Lite3 finish_navigation 模式切换。人工确认停车与下游恢复后重启 Action。
+普通成功/失败/已确认取消会收尾并关闭同一个物体检测 session。
 
-```bash
-ros2 launch realsense2_camera rs_launch.py \
-  enable_color:=true enable_depth:=true align_depth.enable:=true enable_sync:=true
-
-ros2 topic hz /camera/camera/aligned_depth_to_color/image_raw
-ros2 topic echo /camera/camera/color/camera_info --once
-ros2 topic echo /perception/visual_event --once
-```
-
-人体社交行为要求当前轨迹包含有效 `bbox`，并在日志元数据中显示
-`distance_source=bbox_height`；即使深度值存在，该策略也不会让深度提前判定到达。
-没有人体检测框、框过期或锁定目标丢失时保持零速度。动物和物体行为仍要求
-`range_valid: true` 与有限正数 `distance_m`，否则返回
-`metric_distance_unavailable`。
+Vision 与 Action 必须一起重建并重启；Vision 需要新增 locate_target_once，
+旧版本 Vision 会明确失败。环境准备见 [视觉地图导航部署](VISUAL_NAV2_APPROACH.md)。
+测试覆盖目标关联、原图 ROI、一次 Nav2 Goal、取消、终态不明、接近失败阻止表达；
+深度、障碍物绕行、实机到点及制动仍需现场验收。

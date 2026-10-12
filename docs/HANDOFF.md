@@ -141,6 +141,9 @@ Vision 负责 bbox 原图来源校验和一次 SLAM 定位。Action 必须检查
 失败原因与 `navigation_required`。取消等待 Nav2 真实 Result；终态未知时进入
 恢复锁并拒绝后续非急停 Goal。
 
+部署、定位服务来源及控制权收尾规则见
+[视觉目标点与 Nav2 接近](VISUAL_NAV2_APPROACH.md)。
+
 安全条件：
 
 - Vision 只对当前有效、带原图来源的目标执行单次定位。
@@ -305,3 +308,10 @@ ros2 topic echo /go2/behavior_diagnostics
 - 修改 `ACT_*` 不应改变上游 Behavior 名；若必须改 Behavior 名属于跨项目 MAJOR 变更。
 - 修改长期 Goal 续租参数须同步 Tree 与 Action，并保持 `goal_id`/`behavior_id` 身份匹配。
 - 修改 Action 字段必须先改 `marsdog_interfaces`，再同步行为树 Client、本项目 Server、文档和联调脚本。
+
+## 通用视觉目标 Nav2 接近
+
+共享 ACT_APPROACH_VISUAL_TARGET 已路由到 visual_nav_approach：Vision locate_target_once
+冻结原图与地图目标，Action 执行一次 NavigateToPose 并等待终态与底盘收稳。
+物体探索保留 Tree 分流；inspectDogFood 不再先导航固定厨房 C。
+Vision 和 Action 必须一起重建、重新 source 并重启。见 VISUAL_TARGET_APPROACH.md。

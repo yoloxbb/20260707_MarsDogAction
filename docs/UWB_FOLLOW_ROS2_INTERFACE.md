@@ -3,13 +3,16 @@
 ## 1. 背景
 
 追随功能在 2026-09-20 换了实现。新包 `go2_uwb_behavior`（C++）自己拥有整条回路：
-UWB 输入、规划、以及 `/cmd_vel` 输出。它对上层只暴露三个接口：
+UWB 输入、规划、以及 `/cmd_vel` 输出。新增目标点模式只生成地图位姿，
+不创建速度发布者；启动与模式切换见 [目标点模式](PLAY_ALONE_LITE3.md#可选uwb-目标点--action--nav2)。
+原跟随及默认 `play_alone` 保持运动模式。上层接口包括：
 
 | 接口 | 类型 | 用途 |
 |---|---|---|
 | `/go2/follow_uwb` | Action `FollowUwb` | 跟着 UWB 信标走 |
 | `/go2/random_roam` | Action `RandomRoam` | 原地玩耍，走到随机点后**自动结束** |
 | `/go2/set_behavior` | Service `SetBehavior` | 只接受 `IDLE=0` / `STOP=2` |
+| `/go2/generate_navigation_goal` | Service `GenerateNavigationGoal` | 仅目标点模式：返回一次 UWB 随机地图目标 |
 
 两个 Action **全局互斥**：已有任务在跑时再发一个会直接 `accepted=false`。
 

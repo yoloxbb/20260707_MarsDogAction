@@ -117,18 +117,9 @@ random_navigation_behaviors:
 # waypoint card and must not appear in ~/.ros/waypoints.yaml.
 random_navigation_place: K
 
-# TEMPORARY OVERRIDE — empty this list to restore the stock behaviour.
-# While non-empty, random-navigation behaviors no longer send the reserved K
-# target: one entry is picked at random per navigation and resolved through
-# the same waypoint_nav ``places`` mapping the fixed routes use, so every
-# "random" walk lands on one of the known fixed points instead of a
-# server-generated target.  Entries are waypoint IDs from ``waypoints`` above.
-random_navigation_fixed_pool:
-  - A
-  - B
-  - C
-  - D
-  - E
+# Keep the fixed-point override disabled. Random-navigation behaviors send K
+# to waypoint_nav for live-map target generation instead of drawing from A-E.
+random_navigation_fixed_pool: []
 
 # Per-task upper bound for reaching the server-generated random point.
 random_navigation_result_timeout_sec: 45.0
@@ -175,9 +166,8 @@ behavior_routes:
     waypoint: B
     stages:
     - recharge
-  # 进食的五个行为共用同一套到达点位后的仪式 (2026-09-18 定版):
-  # 低头 → 抬头 → 趴下 → 站立 → 再低头 → 左右扭腰.  inspectDogFood 的
-  # target_approach 阶段不在这里列出: 导航本身就是它的「到达点位」.
+  # 进食行为共用到达厨房后的仪式。inspectDogFood 是探索视觉选中的狗粮，
+  # 使用 ACT_APPROACH_VISUAL_TARGET 的地图目标，不再先导航到固定厨房。
   eatNormally:
     waypoint: C
     stages:
@@ -206,15 +196,6 @@ behavior_routes:
     - lower_head_again
     - waist_twist
   seekFoodUrgently:
-    waypoint: C
-    stages:
-    - lower_head
-    - head_up
-    - lie_down
-    - stand_up
-    - lower_head_again
-    - waist_twist
-  inspectDogFood:
     waypoint: C
     stages:
     - lower_head

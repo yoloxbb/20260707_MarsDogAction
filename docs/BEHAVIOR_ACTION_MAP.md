@@ -7,9 +7,9 @@
 
 | 项目 | 数量 |
 |---|---:|
-| 直接行为 | 73 |
-| Stage 候选记录 | 269 |
-| 唯一 `ACT_*` | 182 |
+| 直接行为 | 77 |
+| Stage 候选记录 | 312 |
+| 唯一 `ACT_*` | 191 |
 
 所有名称精确匹配且大小写敏感。没有旧行为名、alias 或旧动作回退。
 
@@ -72,7 +72,7 @@ inspectDogFood
 
 ```text
 target_approach
-  ACT_APPROACH_VISUAL_TARGET -> visual_target_approach
+  ACT_APPROACH_VISUAL_TARGET -> visual_nav_approach
 
 原 interaction / greet / invite / inspect Stage
   原 ACT_* 候选随机选择
@@ -132,6 +132,7 @@ respond_owner_call
 approach_voice_caller
 respond_person_fall
 respond_stop_gesture
+respond_wave_gesture
 sit_down
 lie_down
 stand_up
@@ -184,6 +185,10 @@ approach_voice_caller
 `walk_to_random_point/go_out_to_play/go_home` 由 Nav2 先完成目标导航，成功后才
 完成对应 Stage；控制器缺失、导航失败、取消或超时均返回失败。
 
+`walk_to_random_point` / `go_out_to_play` 在导航确认后增加 `arrival_expression`，
+随机执行一套 2–3 段短组合；六种 `express*Alone` 也增加按情绪区分的组合候选。
+完整顺序、平台实际动作和总预算见 [随机到点表现](RANDOM_ARRIVAL_EXPRESSIONS.md)。
+
 Go2 模式通过 `go2_sport.yaml` 在运行时覆盖已实现动作：坐/趴/站、后退、保持、
 握手/击掌代理、转圈和装死身体姿态使用官方高层 SportMode；`come_to_owner`、
 `approach_owner`、`return_to_owner` 在 Action 侧绑定当前新鲜人体轨迹后执行单次定位与按需 Nav2 导航；视觉身份 `unknown` 可用。
@@ -206,7 +211,7 @@ respond_stop_gesture
 
 ### eatNormally（进食仪式）
 
-到达食盆点位（`navigation_waypoints.yaml` 的 `behavior_routes` 里五个进食行为都走
+到达食盆点位（`navigation_waypoints.yaml` 的 `behavior_routes` 里四个进食行为都走
 航点 C 厨房）之后，执行固定的六步仪式，每一步都是单候选 `random_one`，所以操作员
 看到的就是这个顺序：**低头 → 抬头 → 趴下 → 站立 → 再低头 → 左右扭腰**。
 
@@ -221,8 +226,8 @@ waist_twist       ACT_TWIST_WAIST_LEFT_RIGHT
 
 `seekFood` / `seekFoodUrgently` / `eatExcitedly` 使用**完全相同**的六个阶段；
 `inspectDogFood` 在此之上保留原来的 `target_approach`（`ACT_APPROACH_VISUAL_TARGET`，
-order 1）作为「到达点位」本身——导航流程里它由 `behavior_routes` 跳过，但非导航路径
-仍需要它。餐盆旁的低头用的是俯仰代理族（`low_semantic_pitch`）的锚点动作，既让仪式
+order 1），先通过单次地图定位与 Nav2 到达视觉选中的狗粮，
+再执行这六步；它不再绑定固定厨房 C。餐盆旁的低头用的是俯仰代理族（`low_semantic_pitch`）的锚点动作，既让仪式
 语义贴近「低头闻食盆」，也让该族的 `plan_id` 引用继续有效。
 
 为了这一套仪式，原表里 23 个只为旧进食流程存在的动作（`ACT_LICK_FOOD`、
@@ -257,8 +262,37 @@ action
   `circle`（绕点走 3 圈）→ `action`（蹲下排泄）→ `exit` → `head_up`（抬头，
   完成信号）。动作本身仍来自原表，只新增了 `ACT_RAISE_HEAD` 作为完成标记。
 
+## 熟悉玩具的到点动作
+
+`inspectFamiliarPlayItem` 先接近视觉目标并停稳，随机执行低头抬身、左右观察抬身
+或降低机身后左右观察，再选择原玩具互动动作。新增组合最多 12 秒，与接近和
+互动共享 Goal 总预算；动作 ID、目标绑定及其他探索行为保持现有契约。
+详见 [熟悉玩具的到点表达](RANDOM_ARRIVAL_EXPRESSIONS.md#熟悉玩具的到点表达)。
+
 ## 动作元数据
 
-`config/action_catalog.yaml` 只包含新表引用的 182 个动作。
+`config/action_catalog.yaml` 只包含新表引用的 191 个动作。
 
 `ConfigLoader` 会拒绝缺失动作以及新表未引用的多余动作，不存在旧动作回退。
+
+
+### 语音“这是啥？”：`inspect_toy`
+
+`inspect_toy` 新增独立的玩具获取策略和四个必需 Stage：
+`ACT_APPROACH_VISUAL_TARGET` → `ACT_ROAM_LOOK_DOWN_UP` → `ACT_ROAM_SCAN_HEAD_UP`
+→ `ACT_ROAM_STRETCH_SCAN`。获取阶段启动持续检测，按置信度选择球、飞盘或拉环，
+锁定完整 ID 后调用 `locate_target_once` 和一次 Nav2 Goal；只有确认到达才执行三段组合。
+详见 [INSPECT_TOY.md](INSPECT_TOY.md)。
+
+`respond_wake_in_place` 由 Tree 在靠近成功或确认不靠近后内部生成。
+独立 `expression` Stage 以 `random_one` 混合选择单动作和完整短动作组，
+不含人物接近；实际动作池与原地约束见 [唤醒后的随机表现](WAKE_RESPONSE.md)。
+
+
+### 视觉招手靠近后左右扭腰
+
+`EVT_VISION_WAVE` → `respond_wave_gesture` 的两个必选 Stage：
+`target_approach: ACT_APPROACH_VISUAL_TARGET` →
+`expression: ACT_TWIST_WAIST_LEFT_RIGHT`。任意被跟踪的人均可招手触发，使用同帧招手者的
+`vision_epoch + target_id`，Vision 定位后由 Nav2 靠近至人前至少 1.5m；
+第一阶段失败即终止。详细参数见 [行为树动作对接契约](BEHAVIOR_TREE_ACTION_CONTRACT.md#视觉招手直驱respond_wave_gesture)。

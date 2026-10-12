@@ -1,4 +1,4 @@
-"""Fail-closed plan validation for voice-WAITING in-place expressions."""
+"""Fail-closed plan validation for wake and voice-WAITING in-place expressions."""
 
 from __future__ import annotations
 
@@ -13,6 +13,13 @@ INPLACE_WITH_HUMAN_BEHAVIORS = frozenset({
     "expressAnxietyInPlaceWithHuman",
     "expressFearInPlaceWithHuman",
     "expressCuriosityInPlaceWithHuman",
+})
+
+WAKE_EXPRESSION_BEHAVIOR = "respond_wake_in_place"
+# These backend plans use posture gestures only; none acquires a target or walks.
+WAKE_EXPRESSION_UNITS = frozenset({
+    "ACT_RAISE_HEAD", "ACT_TWIST_WAIST_LEFT_RIGHT", "ACT_STRETCH",
+    "ACT_ROAM_LOOK_DOWN_UP", "ACT_ROAM_SCAN_HEAD_UP", "ACT_ROAM_STRETCH_SCAN",
 })
 
 INPLACE_MOBILITY_POLICY = "in_place"
@@ -40,7 +47,8 @@ def validate_inplace_plan(
     approached again.  Its expression stage intentionally reuses the normal
     ``WithHuman`` action units, including chassis expression motions.
     """
-    if behavior_name not in INPLACE_WITH_HUMAN_BEHAVIORS:
+    wake_expression = behavior_name == WAKE_EXPRESSION_BEHAVIOR
+    if not wake_expression and behavior_name not in INPLACE_WITH_HUMAN_BEHAVIORS:
         return InPlacePlanCheck(True)
     if str(params.get("mobility_policy", "")) != INPLACE_MOBILITY_POLICY:
         return InPlacePlanCheck(False, "inplace_policy_required")
@@ -59,6 +67,8 @@ def validate_inplace_plan(
             return InPlacePlanCheck(False, "inplace_policy_violation")
         if str(stage.get("motion_state", "active")) == "stationary":
             return InPlacePlanCheck(False, "inplace_policy_violation")
+        if wake_expression and stage.get("selection_policy") != "random_one":
+            return InPlacePlanCheck(False, "inplace_policy_violation")
         candidates = stage.get("candidates", []) or []
         if not candidates:
             return InPlacePlanCheck(False, "inplace_policy_violation")
@@ -72,7 +82,15 @@ def validate_inplace_plan(
                     controller_routes.get("_default", "mock"),
                 )
             )
-            if route not in INPLACE_ALLOWED_CONTROLLER_ROUTES:
+            if wake_expression and (
+                unit_id not in WAKE_EXPRESSION_UNITS
+                or route not in {"go2", "lite3", "unsupported"}
+            ):
+                return InPlacePlanCheck(False, "inplace_policy_violation")
+            # Unsupported candidates issue no expression motion and are
+            # filtered/rejected by StageExecutor. They must not invalidate a
+            # mixed random stage before its supported candidates can run.
+            if route != "unsupported" and route not in INPLACE_ALLOWED_CONTROLLER_ROUTES:
                 return InPlacePlanCheck(False, "inplace_policy_violation")
 
     return InPlacePlanCheck(True)

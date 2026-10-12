@@ -33,6 +33,7 @@ EXPECTED_BEHAVIORS = {
     "exploreRoom",
     "inspectObject",
     "inspectFamiliarPlayItem",
+    "inspect_toy",
     "inspectTrashCan",
     "inspectDeliveryBox",
     "inspectTissuePaper",
@@ -61,8 +62,10 @@ EXPECTED_BEHAVIORS = {
     "farewell_leave",
     "respond_owner_call",
     "approach_voice_caller",
+    "respond_wake_in_place",
     "respond_person_fall",
     "respond_stop_gesture",
+    "respond_wave_gesture",
     "sit_down",
     "lie_down",
     "stand_up",
@@ -101,7 +104,7 @@ EXPECTED_BEHAVIORS = {
 # while the unique-action count drops 204 -> 182 because the rewrite orphaned
 # 23 eating-only ACT_* units that were then deleted from every config.
 EXPECTED_MAPPING_SHA256 = (
-    "9187a5aa84e8b499ab8fb3f47e19b07d2827ed7d5db81b09c281472345a1abef"
+    "3940fc8081b1862a8d2a88acb8ce5be8585436174d540874fdc096cfceecc752"
 )
 
 
@@ -130,13 +133,13 @@ def test_behavior_tree_mapping_matches_reviewed_contract() -> None:
         len(stage)
         for stages in mapping.values()
         for stage in stages
-    ) == 273
+    ) == 312
     assert len({
         unit_id
         for stages in mapping.values()
         for stage in stages
         for unit_id in stage
-    }) == 183
+    }) == 191
 
     payload = json.dumps(
         mapping,
@@ -204,7 +207,7 @@ def test_emotion_mobility_contract_separates_inplace_and_alone_routes() -> None:
             for candidate in inplace["stages"][0]["candidates"]
         )
         assert all(
-            loader.get_controller_routes("go2")[candidate["unit_id"]] == "go2"
+            loader.get_controller_routes("go2")[candidate["unit_id"]] in {"go2", "unsupported"}
             for candidate in inplace["stages"][0]["candidates"]
         )
         assert any(
@@ -242,7 +245,7 @@ def test_every_tree_action_is_registered_and_every_stage_selects_one() -> None:
         assert orders == list(range(1, len(orders) + 1))
 
     assert set(loader.action_catalog) == referenced_actions
-    assert len(loader.action_catalog) == 183
+    assert len(loader.action_catalog) == 191
     assert {
         config["unit_id"]
         for config in loader.action_catalog.values()
@@ -320,7 +323,6 @@ def test_every_tree_action_is_registered_and_every_stage_selects_one() -> None:
         "eatExcitedly": "C",
         "seekFood": "C",
         "seekFoodUrgently": "C",
-        "inspectDogFood": "C",
         "barkShortAlert": "D",
         "lickPaws": "E",
     }
@@ -348,8 +350,16 @@ def test_only_tree_templates_and_actions_are_exposed() -> None:
 def test_core_voice_behaviors_keep_distinct_action_contracts() -> None:
     loader = _load()
     expected = {
-        "walk_to_random_point": [["ACT_NAV_WALK_RANDOM"]],
-        "go_out_to_play": [["ACT_NAV_GO_OUT_TO_PLAY"]],
+        "walk_to_random_point": [
+            ["ACT_NAV_WALK_RANDOM"],
+            ["ACT_ROAM_LOOK_DOWN_UP", "ACT_ROAM_SCAN_HEAD_UP",
+             "ACT_ROAM_STRETCH_SCAN", "ACT_ROAM_LIE_STAND"],
+        ],
+        "go_out_to_play": [
+            ["ACT_NAV_GO_OUT_TO_PLAY"],
+            ["ACT_ROAM_TWIST_STRETCH", "ACT_ROAM_HEAD_UP_TWIST",
+             "ACT_ROAM_STRETCH_SCAN", "ACT_ROAM_SCAN_HEAD_UP"],
+        ],
         "go_home": [["ACT_NAV_GO_HOME"]],
         "approach_owner": [["ACT_INTERACT_APPROACH_OWNER_CLOSER"]],
         "back_up": [["ACT_BASIC_BACK_UP"]],
@@ -434,6 +444,7 @@ def test_direct_tree_names_are_preserved_exactly() -> None:
         "sleepOnSide",
         "respond_owner_call",
         "approach_voice_caller",
+        "respond_wake_in_place",
         "respond_person_fall",
         "respond_stop_gesture",
         "walk_to_random_point",

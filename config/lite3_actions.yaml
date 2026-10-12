@@ -54,6 +54,14 @@ accepted_unverified_actions:
   - ACT_STRETCH
   - ACT_TWIST_WAIST_LEFT_RIGHT
   - ACT_TRICK_SPIN
+  - ACT_ROAM_LOOK_DOWN_UP
+  - ACT_ROAM_SCAN_HEAD_UP
+  - ACT_ROAM_STRETCH_SCAN
+  - ACT_ROAM_TWIST_STRETCH
+  - ACT_ROAM_LIE_STAND
+  - ACT_ROAM_LOWER_HEAD_PAUSE
+  - ACT_ROAM_OBSERVE_PAUSE
+  - ACT_ROAM_HEAD_UP_TWIST
 
 # These are runtime clamps, not documentation.  Every velocity this backend
 # publishes is clamped to them, so a plan that asks for more does not fail --
@@ -81,6 +89,78 @@ controller_route_overrides:
 # proxies.  No plan below may claim a biological or manipulation side effect
 # that Lite3 did not physically perform.
 action_sequences:
+  # Target-free arrival combos; each failed/canceled step aborts the sequence.
+  ACT_ROAM_LOOK_DOWN_UP:
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Look down, then raise the body pitch and return to neutral.
+    sequence:
+      - {type: pose, cmd_code: 0x21010130, value: 20000, require: stand, duration_sec: 2.0}
+      - {type: pose, cmd_code: 0x21010130, value: -20000, require: stand, duration_sec: 2.5}
+  ACT_ROAM_SCAN_HEAD_UP:
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Scan left and right with body yaw, then raise the body pitch.
+    sequence:
+      - {type: pose, cmd_code: 0x21010135, value: 10500, require: stand, duration_sec: 1.6}
+      - {type: pose, cmd_code: 0x21010135, value: -10500, require: stand, duration_sec: 1.6}
+      - {type: pose, cmd_code: 0x21010130, value: -20000, require: stand, duration_sec: 2.5}
+  ACT_ROAM_STRETCH_SCAN:
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Lower and restore the body, then scan left and right.
+    sequence:
+      - {type: pose, cmd_code: 0x21010102, value: -21000, require: stand, duration_sec: 1.0}
+      - {type: pose, cmd_code: 0x21010135, value: 10500, require: stand, duration_sec: 1.6}
+      - {type: pose, cmd_code: 0x21010135, value: -10500, require: stand, duration_sec: 1.6}
+  ACT_ROAM_TWIST_STRETCH:
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Twist left and right, then lower and restore the body.
+    sequence:
+      - {type: pose, cmd_code: 0x21010135, value: 10500, require: stand, duration_sec: 1.6}
+      - {type: pose, cmd_code: 0x21010135, value: -10500, require: stand, duration_sec: 1.6}
+      - {type: pose, cmd_code: 0x21010102, value: -21000, require: stand, duration_sec: 1.0}
+  ACT_ROAM_LIE_STAND:
+    fidelity: exact
+    verified: false
+    semantic_effect: physical
+    description: Lie down, pause briefly, then stand up; Lite3 confirms both postures.
+    sequence:
+      - {type: target_posture, target: lie, completion_timeout_sec: 4.5, stable_samples: 5}
+      - {type: hold, require: lie, duration_sec: 1.0}
+      - {type: target_posture, target: stand, completion_timeout_sec: 4.5, stable_samples: 5}
+  ACT_ROAM_LOWER_HEAD_PAUSE:
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Briefly lower the body pitch, restore it, then hold still.
+    sequence:
+      - {type: pose, cmd_code: 0x21010130, value: 20000, require: stand, duration_sec: 0.8}
+      - {type: hold, require: stand, duration_sec: 1.2}
+  ACT_ROAM_OBSERVE_PAUSE:
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Make a short left-right body-yaw observation, then hold still.
+    sequence:
+      - {type: pose, cmd_code: 0x21010135, value: 10500, require: stand, duration_sec: 0.7}
+      - {type: pose, cmd_code: 0x21010135, value: -10500, require: stand, duration_sec: 0.7}
+      - {type: hold, require: stand, duration_sec: 1.2}
+  ACT_ROAM_HEAD_UP_TWIST:
+    fidelity: proxy
+    verified: false
+    semantic_effect: proxy_motion
+    description: Raise the body pitch, then twist left and right.
+    sequence:
+      - {type: pose, cmd_code: 0x21010130, value: -20000, require: stand, duration_sec: 2.5}
+      - {type: pose, cmd_code: 0x21010135, value: 10500, require: stand, duration_sec: 1.6}
+      - {type: pose, cmd_code: 0x21010135, value: -10500, require: stand, duration_sec: 1.6}
+
   ACT_BASIC_LIE_DOWN:
     fidelity: exact
     verified: false

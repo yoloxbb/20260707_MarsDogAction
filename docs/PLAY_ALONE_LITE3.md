@@ -36,3 +36,80 @@ Action 接收 `/execute_behavior` 的精确行为名 `play_alone`，不直接订
 软件回归覆盖成功双条件、所有失败业务码、Goal 拒绝、取消确认不释放、晚到的
 Goal 接受、停稳失败和终态传输异常。尚需实机验证 UWB 到点、姿态表现、
 取消停车以及多周期长期 Goal。运行中的节点不会热加载新 Python，部署需重建并重启。
+
+## 可选：UWB 目标点 → Action → Nav2
+
+默认仍是上文的 `/go2/random_roam`。显式设置 `uwb_roam_execution_mode:=nav2`
+或 `config/uwb_follow.yaml` 的 `roam_execution_mode: nav2` 后使用下面的链路。
+同一个 Behavior Goal 内重复以下完整周期，直到取消或失败：
+
+1. `ACT_UWB_RANDOM_ROAM` 仍路由到 `uwb_roam`。Action 确认上游 IDLE、
+   完成 Lite3 站立/控制权预检，调用 `/go2/generate_navigation_goal`。
+   请求包含唯一 `request_id`、`random_seed=0, min_radius=0.5, max_radius=2.0`。
+   上游冻结 UWB 圆心，按原圆环和障碍净空约束生成一次固定 `map` 位姿，
+   返回 `navigation_goal` 和 `center_pose`；不使用地图点位 K。
+2. Action 检查本次请求 ID、成功业务码、位姿、时间戳和采样半径，
+   最多发送一个 Nav2 `/navigate_to_pose` Goal。生成成功仅表示有目标，不能执行玩耍。
+3. 只有 Nav2 真实 `STATUS_SUCCEEDED(4)` 且未发生取消/围栏失败，
+   并且 `finish_navigation()` 确认底盘停稳后，才进入 `play` 必需阶段。
+4. 均匀随机选一个 `ACT_GUARD_DOOR`、`ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD`
+   或 `ACT_STRETCH`。这些是既有 Lite3 有界身体姿态表达，每次只做一个，预算 5 秒。
+
+漫游单元预算 40 秒：目标生成等待最多 5 秒，Nav2 内部导航最多 30 秒，
+为结束停稳预留时间；取消后还需等待真实 Result，确认窗口可延长实际收尾时间。
+长期 Goal 无外层截止时间，Tree 按 `goal_id` / `behavior_id` 续租，语音 idle 不取消它。
+
+取消确认不是终态。取消先请求 Nav2 停止，真实 Result 前不交还控制权。
+晚到的 Goal 接受必须取消并保留对应 Result；终态未知、传输异常或停稳失败时
+保留故障锁并拒绝替代运动 Goal。人工确认停车并恢复下游后重启 Action。
+所有目标生成或导航失败均不执行玩耍。
+
+Nav2 使用自己的代价地图和规划器。目标生成仍检查圆环和障碍净空；
+Action 按 Nav2 的地图位姿反馈检查相对冻结圆心的 6 米范围，越界请求取消并等待终态。
+此反馈检查存在反馈/制动延迟，不等同于旧局部链的逐速度预测围栏。
+
+## 启动与重建
+
+先在 `/home/cat/robot_ws/go2_follow_develop` 构建新服务：
+
+```bash
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+colcon build --symlink-install --packages-select go2_uwb_behavior
+source install/setup.bash
+ros2 launch go2_uwb_behavior navigation_targets.launch.py
+```
+
+此模式不会创建 `/cmd_vel` 或名义速度发布者，`/go2/navigation_target` 仅供显示；
+Action 只消费本次服务响应，不会因显示话题的一条旧目标而自动运动。
+UWB 串口、双目相机、Nav2 与地图定位仍需按部署要求启动。
+Lite3 底盘使用 `use_bridge:=false use_action:=false`，由 Action 管理程序/遥控模式。
+必须存在有效 `map←odom` TF，Nav2 必须处于 active 且提供 `/navigate_to_pose`。
+
+再在 `/home/cat/ros2_ws` 构建 Action，构建及运行终端都需 source 新的 UWB 安装空间：
+
+```bash
+source /opt/ros/humble/setup.bash
+source /home/cat/robot_ws/go2_follow_develop/install/setup.bash
+source /home/cat/ros2_ws/install/setup.bash
+colcon build --symlink-install --packages-select marsdog_action_executor
+source /home/cat/ros2_ws/install/setup.bash
+```
+
+重启 Action；运行中的 Python 节点不会热加载源码。
+`uwb_follow_enabled=true` 仍用于注册 Lite3 的 UWB 适配器。
+
+## 兼容旧链路
+
+`uwb_roam_execution_mode:=legacy` 可明确选择旧 `/go2/random_roam` 运动 Action。
+此时上游使用 `behavior_follow_roam.launch.py` 的原运动模式；不能搭配 target-only 节点。
+持续 `/go2/follow_uwb` 也使用原运动模式。目标生产者名为 `/uwb_navigation_target_node`，
+运动节点名为 `/uwb_behavior_controller_node`；两者共享服务和感知话题，不能同时启动。
+切换需停止并重启上游；不会静默退回旧速度链。
+
+## 软件验证与实机验收
+
+软件测试覆盖目标生成、请求关联、输入超时、坐标和时效、单个 Nav2 Goal、
+生成失败不导航、取消确认不释放、晚接受 Goal、终态未知锁定、围栏与停稳失败。
+目标模式节点测试检查没有底盘速度发布者。
+仍需实机验证 UWB 目标、Nav2 到点、姿态表现、取消制动及长期多周期体验。

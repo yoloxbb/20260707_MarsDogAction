@@ -5,10 +5,11 @@
 #   go2        -> the external FTDI UWB-AOA -> local_follow -> /cmd_vel
 #                 pipeline below, spawned as processes by the executor.
 #   lite3      -> a client of the go2_uwb_behavior Action/Service interface
-#                 (ros_interface below).  That package owns /cmd_vel itself,
-#                 so the executor must NOT start anything -- doing so would
-#                 put a second publisher on /cmd_vel.
+#                 (ros_interface below). Its movement mode owns /cmd_vel;
+#                 its optional target-only mode only returns map goals.
+#                 The operator starts the selected mode separately.
 enabled: true
+roam_execution_mode: legacy  # Optional nav2 mode: UWB generates, Action navigates.
 
 # External UWB-AOA follow pipeline (Go2 only).
 setup_script: /home/cat/robot_ws/go2_follow/install/setup.bash
@@ -32,6 +33,7 @@ stop_publish_count: 3
 # or local_velocity_planner.launch.py alongside it -- all three publish
 # /cmd_vel and would fight the chain.
 ros_interface:
+  navigation_goal_service: /go2/generate_navigation_goal
   follow_action: /go2/follow_uwb
   # The only way to stop the chain, so a follow is refused outright when this
   # service is unreachable: never hand over /cmd_vel without a brake.

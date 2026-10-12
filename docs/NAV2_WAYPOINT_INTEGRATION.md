@@ -24,9 +24,8 @@ exact ACT_* -> Go2/Lite3 platform action
 ```
 
 Action 是生产路径中 `waypoint_nav` 的唯一调用方。固定语义路由发送地点
-文件中的精确名称；随机导航默认发送保留目标 `K`，由 waypoint_nav 根据实时
-`/map` 选点（当前由 `random_navigation_fixed_pool` 临时覆盖为固定点位抽签，
-见 §2）。两者统一走上述 Service/状态 Topic，Action 不直连
+文件中的精确名称；随机导航发送保留目标 `K`，由 waypoint_nav 根据实时
+`/map` 选点。两者统一走上述 Service/状态 Topic，Action 不直连
 `/navigate_to_pose`。导航失败、超时、协议错误或取消时，不会继续执行到点后的
 Stage 运动。
 
@@ -68,14 +67,9 @@ waypoint_nav 允许 `place` 是精确 ID 或精确名称，并在受理结果中
 受理后统一返回 `matched_id="11"`、`place="随机点位"`，Action 客户端已显式允许
 这一规范化。
 
-> **临时覆盖（2026-09-20）**：`navigation_waypoints.yaml` 现启用
-> `random_navigation_fixed_pool: [A, B, C, D, E]`。池非空时随机导航**不再**发送
-> `K`，而是每次导航从池中随机抽一个点位，经 `waypoint_nav.places` 解析成与固定
-> 路由完全相同的地点名后再下发。因此「随便走走」的落点必定是五个已标定点之一，
-> 不再依赖服务端在 `/map` 上选点。池里的 ID 必须同时存在于 `waypoints` 和
-> `waypoint_nav.places`，否则启动即报错。把列表清空
-> （`random_navigation_fixed_pool: []`）即恢复由 waypoint_nav 生成随机目标的行为；
-> `random_navigation_place: K` 保持不变，校验不接受把它改成固定点位。
+当前配置使用 `random_navigation_place: K` 与 `random_navigation_fixed_pool: []`。
+此前从 A–E 五个固定点抽选的临时覆盖已关闭，随机点由服务端根据实时地图生成。
+固定点覆盖参数保留作兼容配置；只有显式填入非空列表才会改为固定点抽选。
 
 执行器不会自动发布 `/initialpose`。AMCL 初始位姿应在整机启动或定位恢复流程中
 设置，不能在每次行为开始时重置。
@@ -93,7 +87,6 @@ waypoint_nav 允许 `place` 是精确 ID 或精确名称，并在受理结果中
 | `eatExcitedly` | C | 同上 |
 | `seekFood` | C | 同上 |
 | `seekFoodUrgently` | C | 同上 |
-| `inspectDogFood` | C | 同上（它的 `target_approach` 不在此列） |
 | `barkShortAlert` | D | `circle`, `action`, `exit`, `head_up` |
 | `lickPaws` | E | `groom` |
 
@@ -154,8 +147,13 @@ Lite3 没有原生的「转一整圈」动作，因此 `ACT_CIRCLE_AROUND` 走�
 在十几到几十秒量级，不要因此把它压回小值。
 
 `walk_to_random_point` 与 `go_out_to_play` 都走随机导航，分别保留
-`ACT_NAV_WALK_RANDOM` 和 `ACT_NAV_GO_OUT_TO_PLAY`；目标从
-`random_navigation_fixed_pool` 抽签（池为空时回到保留随机目标 `K`）。可通行区域与障碍判定属于 waypoint_nav/
+`ACT_NAV_WALK_RANDOM` 和 `ACT_NAV_GO_OUT_TO_PLAY`；当前都发送保留随机目标 `K`。
+导航成功停稳后，两者新增必需的 `arrival_expression` Stage，随机选一套完整
+短动作组合。该 Stage 直接路由到所选底盘，不经 `behavior_mobility` 的导航确认保持。
+六种 Alone 情绪也增加组合候选；K 导航 45 秒上限和 0.5 原地概率保留。
+Tree 为这八种随机行为提供 70 秒总预算，组合最多 20 秒，所有阶段共享截止时间。
+动作清单和平台边界见 [随机到点表现](RANDOM_ARRIVAL_EXPRESSIONS.md)。
+可通行区域与障碍判定属于 waypoint_nav/
 Nav2，Action 不再维护随机候选固定点或多边形。导航适配器
 未启用时，这三个行为因 `requires_controller=true` 失败，不会模拟成功。
 
@@ -172,9 +170,9 @@ Feedback 和 Result 继续保留原动作 ID。配置校验要求每个已路由
 
 ### 3.3 进食：到点后的六步仪式
 
-五个进食行为（`eatNormally`、`eatExcitedly`、`seekFood`、`seekFoodUrgently`、
-`inspectDogFood`）在到达 C 点厨房后执行同一套固定仪式，每一步都是单候选
-`random_one`，顺序即操作员看到的顺序：
+四个进食行为（`eatNormally`、`eatExcitedly`、`seekFood`、`seekFoodUrgently`）
+在到达 C 点厨房后执行同一套固定仪式；`inspectDogFood` 则先定位实际狗粮目标，
+通过 Nav2 接近后执行这套仪式。每一步都是单候选 `random_one`，顺序如下：
 
 ```text
 lower_head       低头   ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD
@@ -186,8 +184,9 @@ waist_twist      扭腰   ACT_TWIST_WAIST_LEFT_RIGHT
 ```
 
 原表里 `prepare` / `eating` / `interaction` / `exit` / `seek_food` / `inspect`
-这些阶段被整体替换，只剩 `inspectDogFood` 的 `target_approach` 留在行为定义里
-（order 1，`failure_policy: abort`），路由里不列出——导航本身就是它的「到达点位」。
+这些阶段被整体替换。`inspectDogFood` 的 `target_approach` 仍留在行为定义里
+（order 1，`failure_policy: abort`），由 `visual_nav_approach` 完成目标接近；
+它不再走固定厨房点位的前置导航，接近失败则终止后续仪式。
 两侧低头共用俯仰代理族（`low_semantic_pitch`）的锚点动作，语义上正是「低头闻食盆」；
 扭腰是这一次唯一新增的 `ACT_*`，Lite3 用左右各 1.6 s 的偏航代理，
 Go2 用 `waist_twist` 组（`move` z ±0.45）。
@@ -244,12 +243,11 @@ ros2 launch marsdog_action_executor action_executor.launch.py \
 ### 情绪类移动契约
 
 - `expressCalm/Joy/Curiosity/Excitement/Anxiety/FearAlone`：触发移动时发送
-  `place="K"`（池非空时为抽中的固定点位地点名），由 `waypoint_nav` 在实时地图中
-  选点或直接解析该固定点，到达后执行表达动作。六个 Alone 行为另有
+  `place="K"`，由 `waypoint_nav` 在实时地图中选点，到达后执行表达动作。六个 Alone 行为另有
   `random_navigation_in_place_probability`（当前 0.5）决定是否原地不动。
 - 对应的 `*WithHuman` 不进入随机导航。它们先执行必需的
   `approach_human` Stage，以 Goal 中不可变的 `vision_epoch + target_id` 锁定
-  人员，保持实时视觉闭环并停在安全距离，成功后才进入 `expression`。
+  人员，经单次原图定位和 Nav2 接近，在真实终态成功且底盘收稳后才进入 `expression`。
 - 人员目标缺失、失鲜、切换 epoch、测距无效、取消或超时都会发布零速并让
   `WithHuman` 失败，不会静默降级成 `Alone`。
 
@@ -447,3 +445,5 @@ task_id tombstone，重复 `goto_place` 返回 `TASK_ID_RETIRED`，避免旧 ID 
 
 页面如需更多导航细节，可展示 Action Feedback，不应绕过 Action 直接消费其他
 任务的状态，也不能把 waypoint 名称伪装成 `ACT_*`。
+
+`inspectDogFood` 属于视觉探索：使用 locate_target_once -> Nav2 到视觉选中的狗粮，再做六步仪式；不参与固定厨房 C 的 behavior_routes。

@@ -2,6 +2,7 @@ import threading
 import time
 import sys
 import json
+import pytest
 from types import ModuleType
 from types import SimpleNamespace
 
@@ -217,6 +218,36 @@ def test_lite3_navigation_preflight_and_settle_gate_result():
     assert (chassis.prepared, chassis.finished) == (2, 2)
 
 
+@pytest.mark.parametrize("failure", ["acceptance_unknown", "terminal_unknown", "exception"])
+def test_unresolved_navigation_stops_without_releasing_chassis(failure):
+    transport = Transport({
+        "ok": True, "target_id": TARGET_ID, "navigation_required": True,
+        "navigation_goal": POSE, "status": 0, "person_point": PERSON_POINT,
+    })
+    hooks = []
+    stops = []
+
+    def navigate(*args):
+        if failure == "exception":
+            raise RuntimeError("lost result transport")
+        transport.recovery_required = True
+        return False, False, f"nav2_{failure}:operator_recovery_required"
+
+    transport.navigate = navigate
+    chassis = SimpleNamespace(
+        prepare_navigation=lambda: hooks.append("prepare") or True,
+        finish_navigation=lambda: hooks.append("finish") or True,
+    )
+    adapter = PersonNavApproachAdapter(transport, stops.append, chassis_backend=chassis)
+    result = run(adapter, context())
+    assert not result.success
+    assert result.metadata["recovery_required"] is True
+    assert hooks == ["prepare"]
+    assert len(stops) == 3
+    assert run(adapter, context()).reason == "operator_recovery_required"
+    assert hooks == ["prepare"]
+
+
 def test_within_stand_off_does_not_navigate():
     transport = Transport({
         "ok": True, "target_id": TARGET_ID, "navigation_required": False,
@@ -411,6 +442,80 @@ def _ros_transport(monkeypatch, send_future):
     return transport
 
 
+@pytest.mark.parametrize("mismatch", ["task_id", "task_type", None])
+def test_localization_response_is_bound_to_this_request(mismatch):
+    transport = object.__new__(Ros2PersonApproachTransport)
+    transport._vision_type = SimpleNamespace(Request=SimpleNamespace)
+    transport._service_timeout = 1.
+
+    def call(request):
+        response = SimpleNamespace(task_id=request.task_id, task_type=request.task_type,
+                                   success=True, result_json='{"ok": true}', error_message="")
+        if mismatch:
+            setattr(response, mismatch, "old-task")
+        return _Future(response, done=True)
+
+    transport._vision = SimpleNamespace(wait_for_service=lambda **kwargs: True, call_async=call)
+    result, reason = transport.locate(TARGET_ID, 1.5, time.monotonic() + 1., threading.Event())
+    if mismatch:
+        assert result is None and reason == "vision_localization_response_mismatch"
+    else:
+        assert result == {"ok": True} and reason == "ok"
+
+
+@pytest.mark.parametrize("kind,distance", [("human", 2.0), ("animal", .8), ("object", .6)])
+def test_visual_localization_transport_sends_goal_distance_in_vision_task(kind, distance):
+    transport = object.__new__(Ros2PersonApproachTransport)
+    transport._vision_type = SimpleNamespace(Request=SimpleNamespace)
+    transport._service_timeout = 1.
+    requests = []
+
+    def call(request):
+        requests.append(request)
+        return _Future(SimpleNamespace(
+            task_id=request.task_id, task_type=request.task_type, success=True,
+            result_json='{"ok": true}', error_message="",
+        ), done=True)
+
+    transport._vision = SimpleNamespace(wait_for_service=lambda **kwargs: True, call_async=call)
+    target_id = "epoch:human:7" if kind == "human" else "epoch:object:7"
+    result, reason = transport.locate_target(
+        target_id, kind, distance, time.monotonic() + 1., threading.Event(),
+        min_confidence=.5 if kind == "human" else .4 if kind == "animal" else .35,
+    )
+    assert result == {"ok": True} and reason == "ok"
+    assert len(requests) == 1 and requests[0].task_type == "locate_target_once"
+    params = json.loads(requests[0].params_json)
+    assert params["stand_off_distance"] == distance
+    assert params["target_id"] == target_id and params["target_type"] == kind
+
+
+def test_empty_goal_acceptance_retains_recovery(monkeypatch):
+    sent = _Future(None, done=True)
+    transport = _ros_transport(monkeypatch, sent)
+    result = transport.navigate(POSE, time.monotonic() + 1., threading.Event())
+    assert result == (False, False, "nav2_empty_acceptance:operator_recovery_required")
+    assert transport.recovery_required
+    assert transport._pending_send is sent
+
+
+def test_late_acceptance_still_cancels_when_result_transport_fails(monkeypatch):
+    sent = _Future()
+    transport = _ros_transport(monkeypatch, sent)
+    result = transport.navigate(POSE, time.monotonic() + .01, threading.Event())
+    assert result[2] == "nav2_acceptance_unknown:operator_recovery_required"
+    canceled = []
+
+    def get_result():
+        raise OSError("result service unavailable")
+
+    handle = SimpleNamespace(accepted=True, get_result_async=get_result,
+                             cancel_goal_async=lambda: canceled.append(True))
+    sent.finish(handle)
+    assert canceled == [True]
+    assert transport._goal is handle and transport.recovery_required
+
+
 def test_nav2_cancel_ack_does_not_release_before_result(monkeypatch):
     result_future = _Future()
 
@@ -464,13 +569,33 @@ def test_nav2_acceptance_timeout_latches_recovery_and_cancels_late_goal(monkeypa
 
         def __init__(self):
             self.cancels = 0
+            self.result_future = _Future()
 
         def cancel_goal_async(self):
             self.cancels += 1
 
         def get_result_async(self):
-            return _Future()
+            return self.result_future
 
     handle = LateHandle()
     send_future.finish(handle)
     assert handle.cancels == 1
+    assert transport._goal is handle
+    assert transport._result_future is handle.result_future
+    handle.result_future.finish(SimpleNamespace(status=5))
+    assert transport._goal is None
+    assert transport._result_future is None
+    assert transport.recovery_required
+
+
+@pytest.mark.parametrize("wrapped", [None, SimpleNamespace(status=2)])
+def test_invalid_nav2_result_keeps_ownership_and_recovery_lock(monkeypatch, wrapped):
+    handle = SimpleNamespace(
+        accepted=True,
+        get_result_async=lambda: _Future(wrapped, done=True),
+    )
+    transport = _ros_transport(monkeypatch, _Future(handle, done=True))
+    result = transport.navigate(POSE, time.monotonic() + 1.0, threading.Event())
+    assert not result[0]
+    assert transport.recovery_required
+    assert transport._goal is handle

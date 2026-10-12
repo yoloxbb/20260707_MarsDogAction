@@ -40,7 +40,8 @@ class AtomicActionExecutor(BaseUnitExecutor):
     ) -> UnitResult:
         unit_id = unit_config.get("unit_id", "unknown")
         timeout = float(unit_config.get("timeout_sec", 5.0))
-        duration = max(0.0, timeout * ctx.duration_scale * ctx.speed_scale)
+        scale = ctx.duration_scale * ctx.speed_scale if unit_config.get("scale_duration", True) else 1.0
+        duration = max(0.0, timeout * scale)
         remaining = _remaining_budget(ctx)
         if remaining is not None:
             duration = min(duration, remaining)

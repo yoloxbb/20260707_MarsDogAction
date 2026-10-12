@@ -114,11 +114,26 @@ class StageExecutor:
         # implementation exists, exclude unavailable alternatives before the
         # random selection so Go2 PRAISE/SCOLD cannot choose a unit without
         # a controller on the selected chassis.
-        if available_candidates:
+        if available_candidates and policy not in {"fixed", "sequence"}:
             candidates = available_candidates
 
         if policy in ("fixed", "sequence"):
             chosen = candidates  # all candidates in order
+        elif policy == "random_n":
+            eligible = self._eligibility.filter_candidates(available_candidates, ctx)
+            # Sample distinct semantic actions, even if a caller supplied
+            # duplicate candidates. Insufficient eligibility must fail closed.
+            eligible = list({c["unit_id"]: c for c in eligible}.values())
+            count = stage_config["selection_count"]
+            minimum, maximum = count["min"], min(count["max"], len(eligible))
+            chosen = (
+                rng.sample(eligible, rng.randint(minimum, maximum))
+                if maximum >= minimum else []
+            )
+            logger.info(
+                "Stage %s selected combination: %s", stage_id,
+                [c["unit_id"] for c in chosen],
+            )
         elif policy == "condition_first":
             chosen = self._select_condition_first(candidates, ctx, rng)
         else:
@@ -210,6 +225,8 @@ class StageExecutor:
         )
         if route in (None, "", "mock"):
             return True
+        if route == "unsupported":
+            return False
         adapter = self._controller_adapters.get(route)
         if adapter is None:
             mobility_adapter = self._controller_adapters.get(
@@ -287,12 +304,17 @@ class StageExecutor:
 
         last_unit = ""
         for i in range(num_loops):
+            candidates = self._get_candidates(stage_config)
+            available = [c for c in candidates if self._controller_candidate_available(c, ctx)]
             candidate = self._select_best(
-                self._get_candidates(stage_config), ctx, "random_one", rng,
+                available or candidates, ctx, "random_one", rng,
             )
             if candidate:
-                self._execute_unit(candidate, ctx)
+                ok = self._execute_unit(candidate, ctx)
                 last_unit = candidate.get("unit_id", "")
+                if not ok and stage_config.get("required", True) and stage_config.get("failure_policy") != "skip_stage":
+                    return StageResult(stage_id, False, last_unit,
+                                       str(ctx.metadata.get("unit_failure_reason", "unit failed")))
             if i < num_loops - 1:
                 time.sleep(interval)
 
@@ -319,6 +341,16 @@ class StageExecutor:
             self._controller_routes.get("_default", "mock"),
         )
         adapter = self._controller_adapters.get(route)
+        # Explicitly unsupported Go2 units must not fall through to a mobility
+        # stage wrapper and acquire a misleading success through another route.
+        if route == "unsupported" and "go2" in self._controller_adapters:
+            go2 = self._controller_adapters["go2"]
+            reject = getattr(go2, "reject_unsupported", None)
+            if callable(reject):
+                reject(str(unit_id))
+            ctx.metadata["unit_failure_state"] = "unsupported"
+            ctx.metadata["unit_failure_reason"] = getattr(go2, "last_error", "") or f"go2_unsupported_action:{unit_id}"
+            return False
         if adapter is None:
             mobility_adapter = self._controller_adapters.get(
                 "behavior_mobility"
@@ -331,6 +363,10 @@ class StageExecutor:
                 )
             ):
                 adapter = mobility_adapter
+
+        overrides = getattr(adapter, "get_unit_overrides", None)
+        if callable(overrides):
+            merged = {**meta, **overrides(str(unit_id)), **unit_config}
 
         # Motion/safety-critical tasks must never fall through to the generic
         # TaskExecutor mock lifecycle.  A missing or stale controller route
@@ -389,6 +425,11 @@ class StageExecutor:
                         to_posture = physical_posture
                     elif lite3_result.get("fidelity") == "proxy":
                         to_posture = ""
+            elif route == "go2":
+                go2_result = ctx.metadata.get("go2_action", {})
+                if go2_result.get("requested_act") == unit_id:
+                    # Commanded posture is bookkeeping, not physical feedback.
+                    to_posture = go2_result.get("commanded_posture", "")
             self._posture.apply_unit_to_posture(to_posture)
             return True
         elif result.state == UnitState.CANCELED:

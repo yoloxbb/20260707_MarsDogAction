@@ -662,6 +662,40 @@ def test_same_epoch_sequence_must_increase_and_retired_epoch_is_ignored() -> Non
     assert adapter._stream_sequence == 1
 
 
+def test_sequence_sources_share_epoch_retirement_but_not_watermarks() -> None:
+    clock = FakeClock()
+    adapter = _adapter([], clock)
+
+    assert adapter.update_visual(_payload(sequence=6984), now=clock.now)
+    assert adapter.update_visual(
+        _payload(sequence=1), now=clock.now, sequence_source="object_detections",
+    )
+    assert not adapter.update_visual(
+        _payload(sequence=1), now=clock.now, sequence_source="object_detections",
+    )
+    assert adapter.update_visual(
+        _payload(sequence=7000), now=clock.now, sequence_source="object_detections",
+    )
+    assert adapter.update_visual(_payload(sequence=6985), now=clock.now)
+    assert not adapter.update_visual(_payload(sequence=6984), now=clock.now)
+
+    # Restart retires the old epoch for every source and resets both counters.
+    assert adapter.update_visual(
+        _payload(epoch="vision-epoch-2", sequence=1), now=clock.now,
+        sequence_source="object_detections",
+    )
+    assert not adapter.update_visual(_payload(sequence=6986), now=clock.now)
+    assert not adapter.update_visual(
+        _payload(sequence=7001), now=clock.now, sequence_source="object_detections",
+    )
+    assert adapter.update_visual(
+        _payload(epoch="vision-epoch-2", sequence=1), now=clock.now,
+    )
+    assert not adapter.update_visual(
+        _payload(epoch="vision-epoch-2", sequence=1), now=clock.now,
+    )
+
+
 def test_cancel_barrier_never_publishes_move_after_cancel_returns() -> None:
     commands: list[TwistCommand] = []
     clock = FakeClock()

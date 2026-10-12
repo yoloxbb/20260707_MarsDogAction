@@ -198,6 +198,7 @@ class TargetApproachAdapter:
         self._motion_visual_revision = 0
         self._stream_epoch = ""
         self._stream_sequence = 0
+        self._stream_sequences: dict[str, int] = {}
         self._retired_epochs: set[str] = set()
         self._active_key: tuple[str, str] | None = None
         self._active_policy: _ApproachPolicy | None = None
@@ -215,8 +216,14 @@ class TargetApproachAdapter:
         self,
         payload: Mapping[str, Any],
         now: float | None = None,
+        *,
+        sequence_source: str = "visual_event",
     ) -> bool:
-        """Consume one ``/perception/visual_event`` JSON payload."""
+        """Consume a snapshot with ordering scoped to its producer stream.
+
+        The caller supplies the source; payload fields cannot change it.
+        Vision epoch retirement remains shared across all sources.
+        """
         if not isinstance(payload, Mapping):
             self._invalidate_active_snapshot("invalid_visual_payload")
             return False
@@ -231,16 +238,15 @@ class TargetApproachAdapter:
         with self._lock:
             if payload_epoch in self._retired_epochs:
                 return False
-            if payload_epoch == self._stream_epoch:
-                if sequence <= self._stream_sequence:
-                    return False
-            elif self._stream_epoch:
-                self._retired_epochs.add(self._stream_epoch)
+            if payload_epoch != self._stream_epoch:
+                if self._stream_epoch:
+                    self._retired_epochs.add(self._stream_epoch)
                 self._stream_epoch = payload_epoch
-                self._stream_sequence = 0
-            else:
-                self._stream_epoch = payload_epoch
+                self._stream_sequences.clear()
+            if sequence <= self._stream_sequences.get(sequence_source, 0):
+                return False
 
+            self._stream_sequences[sequence_source] = sequence
             self._stream_sequence = sequence
             self._visual_revision += 1
             revision = self._visual_revision

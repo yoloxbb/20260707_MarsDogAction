@@ -1,4 +1,78 @@
 action_units:
+  # Random arrival expressions are complete hardware sequences. They have no
+  # food, animal or owner target precondition and always finish standing.
+  ACT_ROAM_LOOK_DOWN_UP:
+    unit_id: ACT_ROAM_LOOK_DOWN_UP
+    unit_type: composite_action
+    requires_controller: true
+    timeout_sec: 20.0
+    interrupt_policy: safe_point
+    from_postures: [standing]
+    to_posture: standing
+    description: Look down, then raise the body pitch and return to neutral.
+  ACT_ROAM_SCAN_HEAD_UP:
+    unit_id: ACT_ROAM_SCAN_HEAD_UP
+    unit_type: composite_action
+    requires_controller: true
+    timeout_sec: 20.0
+    interrupt_policy: safe_point
+    from_postures: [standing]
+    to_posture: standing
+    description: Scan left and right with body yaw, then raise the body pitch.
+  ACT_ROAM_STRETCH_SCAN:
+    unit_id: ACT_ROAM_STRETCH_SCAN
+    unit_type: composite_action
+    requires_controller: true
+    timeout_sec: 20.0
+    interrupt_policy: safe_point
+    from_postures: [standing]
+    to_posture: standing
+    description: Lower and restore the body, then scan left and right.
+  ACT_ROAM_TWIST_STRETCH:
+    unit_id: ACT_ROAM_TWIST_STRETCH
+    unit_type: composite_action
+    requires_controller: true
+    timeout_sec: 20.0
+    interrupt_policy: safe_point
+    from_postures: [standing]
+    to_posture: standing
+    description: Twist left and right, then lower and restore the body.
+  ACT_ROAM_LIE_STAND:
+    unit_id: ACT_ROAM_LIE_STAND
+    unit_type: composite_action
+    requires_controller: true
+    timeout_sec: 20.0
+    interrupt_policy: safe_point
+    from_postures: [standing]
+    to_posture: standing
+    description: Lie down, pause briefly, then stand up; Lite3 confirms both postures.
+  ACT_ROAM_LOWER_HEAD_PAUSE:
+    unit_id: ACT_ROAM_LOWER_HEAD_PAUSE
+    unit_type: composite_action
+    requires_controller: true
+    timeout_sec: 12.0
+    interrupt_policy: safe_point
+    from_postures: [standing]
+    to_posture: standing
+    description: Briefly lower the body pitch, restore it, then hold still.
+  ACT_ROAM_OBSERVE_PAUSE:
+    unit_id: ACT_ROAM_OBSERVE_PAUSE
+    unit_type: composite_action
+    requires_controller: true
+    timeout_sec: 12.0
+    interrupt_policy: safe_point
+    from_postures: [standing]
+    to_posture: standing
+    description: Make a short left-right body-yaw observation, then hold still.
+  ACT_ROAM_HEAD_UP_TWIST:
+    unit_id: ACT_ROAM_HEAD_UP_TWIST
+    unit_type: composite_action
+    requires_controller: true
+    timeout_sec: 20.0
+    interrupt_policy: safe_point
+    from_postures: [standing]
+    to_posture: standing
+    description: Raise the body pitch, then twist left and right.
   ACT_RAISE_HEAD:
     unit_id: ACT_RAISE_HEAD
     unit_type: atomic_action
@@ -1323,11 +1397,13 @@ action_units:
   ACT_APPROACH_VISUAL_TARGET:
     unit_id: ACT_APPROACH_VISUAL_TARGET
     unit_type: task
-    timeout_sec: 20.0
+    # Includes original-frame localization, one Nav2 goal, and chassis settling.
+    # The remaining outer ExecuteBehavior budget is still the hard upper bound.
+    timeout_sec: 160.0
     interrupt_policy: immediate
     requires_controller: true
     conditions: {}
-    description: Bind the Tree-selected human, animal, or object to one live visual track, approach with the configured range mode, and stop before the behavior expression; never mock-success when the controller is unavailable.
+    description: Bind the Tree-selected target, locate its original bbox once in map, execute one Nav2 goal with obstacle avoidance, and confirm chassis settling before expression.
   ACT_OWNER_UNHAPPY:
     unit_id: ACT_OWNER_UNHAPPY
     unit_type: atomic_action

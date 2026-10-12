@@ -1,466 +1,923 @@
-# Unitree Go2 high-level SportMode backend.
-#
-# Go2 uses official high-level primitives and labels non-equivalent semantic
-# body expressions as proxies. Unlisted actions fail closed.
+# Go2 专属动作表；不改变 Tree 行为名和 Lite3 实现。
+# exact=原生等价动作，composed=协议/导航组合，proxy=用户授权的安全替代动作。
+# proxy 仅表示配置中描述的 Go2 指令已执行，不代表原口部/搬运/接触/充电任务完成。
+# 禁用翻腾、FrontPounce 和 Scrape；等待时间不代表真实姿态确认。
+# min_linear_x=0.25 是当前设备配置；nav2_spin 只认真实 /spin Result。
 enabled: false
 request_topic: /api/sport/request
 publish_rate_hz: 10.0
 stop_publish_count: 3
+stand_up_wait_sec: 2.5
+cmd_vel_bridge:
+  enabled: true
+  topic: /cmd_vel
+  timeout_sec: 0.5
 limits:
-  max_linear_x: 0.30
-  max_linear_y: 0.20
-  max_angular_z: 1.20
-  # Go2 SportMode Move silently drops linear velocity below this magnitude;
-  # any non-zero Twist/sequence linear_x is floored to it so the robot actually
-  # translates instead of idling on sub-threshold commands.
+  max_linear_x: 0.3
+  max_linear_y: 0.2
+  max_angular_z: 1.2
   min_linear_x: 0.25
-
-# Owner approach commands use a locked Vision target, one SLAM localization,
-# and one Nav2 goal. Navigation owns obstacle avoidance and its real Result.
 controller_route_overrides:
   ACT_INTERACT_APPROACH_OWNER: person_nav_approach
   ACT_INTERACT_APPROACH_OWNER_CLOSER: person_nav_approach
   ACT_INTERACT_RETURN_OWNER: person_nav_approach
-
-# A sequence item publishes one official SportMode request, then keeps the
-# action alive for duration_sec.  `move` is refreshed at publish_rate_hz and is
-# always followed by redundant StopMove requests.
+spin:
+  action_name: /spin
+  server_timeout_sec: 5.0
+# Go2 专属表达链；保留通用 Tree 行为名、接近目标阶段及 Lite3 模板。
+# 平静每次抽取 2~3 个不同动作，随机顺序完整执行。
+# 仅用小幅原地姿态、伸展、坐下和趴卧；最后由 finish_behavior 统一起身平衡。
+behavior_stage_overrides:
+  expressCalmAlone:
+    expression:
+      selection_policy: random_n
+      selection_count: {min: 2, max: 3}
+      candidates:
+      - {unit_id: ACT_ROAM_LOOK_DOWN_UP}
+      - {unit_id: ACT_ROAM_LOWER_HEAD_PAUSE}
+      - {unit_id: ACT_ROAM_OBSERVE_PAUSE}
+      - {unit_id: ACT_TWIST_WAIST_LEFT_RIGHT}
+      - {unit_id: ACT_NUZZLE_BODY}
+      - {unit_id: ACT_STRETCH}
+      - {unit_id: ACT_BASIC_SIT}
+      - {unit_id: ACT_SPLOOT}
+  expressCalmWithHuman:
+    expression:
+      selection_policy: random_n
+      selection_count: {min: 2, max: 3}
+      candidates:
+      - {unit_id: ACT_ROAM_OBSERVE_PAUSE}
+      - {unit_id: ACT_NUZZLE_HEAD}
+      - {unit_id: ACT_NUZZLE_BODY}
+      - {unit_id: ACT_TWIST_WAIST_LEFT_RIGHT}
+      - {unit_id: ACT_ROAM_LOWER_HEAD_PAUSE}
+      - {unit_id: ACT_STRETCH}
+      - {unit_id: ACT_BASIC_SIT}
+      - {unit_id: ACT_SLEEP_BY_FEET}
+  expressCalmInPlaceWithHuman:
+    expression:
+      selection_policy: random_n
+      selection_count: {min: 2, max: 3}
+      candidates:
+      - {unit_id: ACT_ROAM_OBSERVE_PAUSE}
+      - {unit_id: ACT_NUZZLE_HEAD}
+      - {unit_id: ACT_NUZZLE_BODY}
+      - {unit_id: ACT_TWIST_WAIST_LEFT_RIGHT}
+      - {unit_id: ACT_ROAM_LOWER_HEAD_PAUSE}
+      - {unit_id: ACT_STRETCH}
+      - {unit_id: ACT_BASIC_SIT}
+      - {unit_id: ACT_SLEEP_BY_FEET}
 action_sequences:
   ACT_BASIC_SIT:
-    - {command: sit, duration_sec: 2.0}
+    fidelity: exact
+    description: 原生 Sit 坐下。
+    commanded_posture: sitting
+    sequence:
+    - command: sit
+      duration_sec: 2.5
   ACT_BASIC_LIE_DOWN:
-    - {command: stand_down, duration_sec: 2.5}
+    fidelity: exact
+    description: 原生 StandDown 趴下。
+    commanded_posture: lying
+    sequence:
+    - command: stand_down
+      duration_sec: 2.5
   ACT_BASIC_STAND:
-    - {command: stand_up, duration_sec: 2.5}
+    fidelity: exact
+    description: 原生 StandUp 起身。
+    commanded_posture: standing
+    sequence:
+    - command: stand_up
+      duration_sec: 2.5
   ACT_BASIC_BACK_UP:
-    - {command: move, x: -0.20, y: 0.0, z: 0.0, duration_sec: 1.2}
+    fidelity: proxy
+    description: 后退速度指令持续 1.2 秒；不保证两步或精确距离。
+    commanded_posture: standing
+    sequence:
+    - command: move
+      x: -0.25
+      y: 0.0
+      z: 0.0
+      duration_sec: 1.2
   ACT_CONTROL_HOLD_STANDING:
-    - {command: stop_move, duration_sec: 3.0}
+    fidelity: composed
+    description: 显式 StandUp 后保持站立。
+    commanded_posture: standing
+    sequence:
+    - command: stand_up
+      duration_sec: 2.5
+    - command: stop_move
+      duration_sec: 0.5
   ACT_CONTROL_HOLD_POSITION:
-    - {command: stop_move, duration_sec: 5.0}
+    fidelity: exact
+    description: StopMove 保持当前姿态。
+    commanded_posture: ''
+    sequence:
+    - command: stop_move
+      duration_sec: 5.0
   ACT_BASIC_WAIT:
-    - {command: stop_move, duration_sec: 3.0}
-
-  # Go2's Hello canned motion raises a front leg; it is the high-level API
-  # available for the requested paw/high-five interaction.
-  ACT_INTERACT_GIVE_PAW:
-    - {command: hello, duration_sec: 3.0}
-  ACT_INTERACT_HIGH_FIVE:
-    - {command: hello, duration_sec: 3.0}
+    fidelity: exact
+    description: StopMove 等待，不改变当前姿态。
+    commanded_posture: ''
+    sequence:
+    - command: stop_move
+      duration_sec: 3.0
   ACT_TRICK_SPIN:
-    - {command: move, x: 0.0, y: 0.0, z: 1.2, duration_sec: 5.236}
-  ACT_TRICK_PLAY_DEAD:
-    - {command: stand_down, duration_sec: 2.5}
-
-  # Owner-specific expressions run only after ACT_APPROACH_VISUAL_TARGET has
-  # locked and approached identity=owner.
-  ACT_OWNER_UNHAPPY:
-    - {command: stand_down, duration_sec: 2.5}
-  ACT_EXPRESS_MISS_YOU:
-    - {command: hello, duration_sec: 3.0}
-  ACT_OWNER_GOING_OUT:
-    - {command: hello, duration_sec: 2.0}
-
-  # PRAISE/SCOLD are mapped by Tree to existing emotion behaviors. These are
-  # their higher-fidelity representatives; action_groups below cover every
-  # remaining candidate so the original random selection remains available.
-  ACT_NUZZLE_HEAD:
-    - {command: hello, duration_sec: 3.0}
-  ACT_COMFY_STRETCH:
-    - {command: hello, duration_sec: 3.0}
+    fidelity: composed
+    description: Nav2 Spin 相对旋转 2π；只认关联 Goal 的终态 Result。
+    commanded_posture: standing
+    timeout_sec: 25.0
+    sequence:
+    - command: nav2_spin
+      turns: 1
+      duration_sec: 20.0
+  ACT_CIRCLE_AROUND:
+    fidelity: composed
+    description: 睡前原地转三圈：Nav2 Spin 目标 6π，成功后才继续睡眠。
+    commanded_posture: standing
+    timeout_sec: 65.0
+    sequence:
+    - command: nav2_spin
+      turns: 3
+      duration_sec: 60.0
   ACT_PLAY_BOW:
-    - {command: hello, duration_sec: 3.0}
+    fidelity: proxy
+    description: 原生 Stretch 作为前身伸展的玩耍邀请代理。
+    commanded_posture: standing
+    timeout_sec: 7.0
+    sequence:
+    - command: stretch
+      duration_sec: 5.0
   ACT_BONE_DANCE:
-    - {command: hello, duration_sec: 4.0}
-  ACT_WHINE:
-    - {command: stand_down, duration_sec: 2.5}
-  ACT_HIDE_SHRINK:
-    - {command: stand_down, duration_sec: 2.5}
-  ACT_HIDE_BEHIND:
-    - {command: stand_down, duration_sec: 2.5}
-  ACT_INTERACT_EXPLORE:
-    - {command: euler, x: 0.0, y: 0.15, z: 0.0, duration_sec: 0.8}
-    - {command: euler, x: 0.0, y: -0.15, z: 0.0, duration_sec: 0.8}
-    - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.4}
-  ACT_NON_INTERACT_EXPLORE:
-    - {command: euler, x: 0.0, y: 0.15, z: 0.0, duration_sec: 0.8}
-    - {command: euler, x: 0.0, y: -0.15, z: 0.0, duration_sec: 0.8}
-    - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.4}
-  ACT_FREEZE_SHAKE:
-    - {command: stand_down, duration_sec: 2.5}
-
-  ACT_PERCEPTION_RESPOND_PERSON_FALL:
-    - {command: stop_move, duration_sec: 0.2}
-  ACT_PERCEPTION_RESPOND_STOP_GESTURE:
-    - {command: stop_move, duration_sec: 0.2}
-  ACT_SYSTEM_EMERGENCY_STOP:
-    - {command: stop_move, duration_sec: 0.1}
-
-# Reusable mappings cover the remaining behavior-table actions. `exact` means the selected
-# SportMode primitive directly represents the requested body action.  `proxy`
-# means Go2 performs the documented safe body expression, but external
-# manipulation (mouth/gripper), facial motion, vocalization, and biological
-# acts are not claimed to have happened.
+    fidelity: exact
+    description: 原生 Dance1 舞蹈（1022），等待 8 秒；没有动作完成反馈。
+    commanded_posture: standing
+    timeout_sec: 10.0
+    sequence:
+    - command: dance1
+      duration_sec: 8.0
+  ACT_GETUP_STRETCH:
+    fidelity: composed
+    description: StandUp 起身后原生 Stretch 伸展。
+    commanded_posture: standing
+    timeout_sec: 10.0
+    sequence:
+    - command: stand_up
+      duration_sec: 2.5
+    - command: stretch
+      duration_sec: 5.0
+  ACT_GETUP_SIT:
+    fidelity: composed
+    description: StandUp 起身后 Sit 坐下；最终姿态为坐姿。
+    commanded_posture: sitting
+    timeout_sec: 6.0
+    sequence:
+    - command: stand_up
+      duration_sec: 2.5
+    - command: sit
+      duration_sec: 2.5
+  ACT_NUZZLE_HEAD:
+    fidelity: proxy
+    description: 机身抬起并回正的亲昵表达代理，不声称头部接触。
+    commanded_posture: standing
+    sequence:
+    - command: euler
+      x: 0.0
+      y: -0.12
+      z: 0.0
+      duration_sec: 0.8
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+  ACT_NUZZLE_BODY:
+    fidelity: proxy
+    description: 小幅身体左右摇摆的亲昵表达代理，不声称接触人。
+    commanded_posture: standing
+    sequence:
+    - command: euler
+      x: 0.1
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.8
+    - command: euler
+      x: -0.1
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.8
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+  ACT_SIT_IN_FRONT_OF_OWNER_AND_LOOK_UP:
+    fidelity: proxy
+    description: 原生 Sit 坐下；不在坐姿执行 Euler，不保证抬头或主人相对位置。
+    commanded_posture: sitting
+    sequence:
+    - command: sit
+      duration_sec: 2.5
+  ACT_SIT_BY_DOOR_AND_LOOK_BACK_AT_OWNER:
+    fidelity: proxy
+    description: 原生 Sit 坐下；门边与主人位置必须由上游完成，无独立头部回望。
+    commanded_posture: sitting
+    sequence:
+    - command: sit
+      duration_sec: 2.5
+  ACT_WAIT_BY_BOWL_OR_TREAT_CABINET:
+    fidelity: proxy
+    description: 到位后的 StopMove 等待；不自行寻找食盆或柜子。
+    commanded_posture: ''
+    sequence:
+    - command: stop_move
+      duration_sec: 3.0
+  ACT_TWIST_WAIST_LEFT_RIGHT:
+    fidelity: composed
+    description: BalanceStand 后 Euler 左右扭动机身，不用 Move 改变整机航向。
+    commanded_posture: standing
+    sequence:
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.2
+      duration_sec: 1.0
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: -0.2
+      duration_sec: 1.0
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+  ACT_SHAKE_OFF_WATER:
+    fidelity: proxy
+    description: 小幅机身左右摇动的甩水表达代理。
+    commanded_posture: standing
+    sequence:
+    - command: euler
+      x: 0.1
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    - command: euler
+      x: -0.1
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    - command: euler
+      x: 0.1
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    - command: euler
+      x: -0.1
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+  ACT_YAWN:
+    fidelity: proxy
+    description: 慢速机身伸展代理，无张嘴或面部哈欠。
+    commanded_posture: standing
+    sequence:
+    - command: euler
+      x: 0.0
+      y: -0.12
+      z: 0.0
+      duration_sec: 1.2
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
 action_groups:
-  alert_pose:
+  paw_greeting:
     fidelity: proxy
-    description: Small pitch-up alert pose; sound remains behavior-audio owned.
+    description: 原生 Hello 抬前爪招手；不保证触碰手掌、腿部或任意指定爪。
+    commanded_posture: standing
     sequence:
-      - {command: euler, x: 0.0, y: -0.12, z: 0.0, duration_sec: 0.7}
-      - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.3}
+    - command: hello
+      duration_sec: 3.0
     actions:
-      - ACT_BARK_AT_OBJECT
-      - ACT_BARK_OR_WHINE_BRIEFLY
-      - ACT_BARK_TENSE
-      # 抬头 is the mirror of ``investigate_pose`` (which holds a positive
-      # pitch); this group already carries a negative one.
-      - ACT_RAISE_HEAD
-      - ACT_WHIMPER
-      - ACT_WHINE_OR_VOCALIZE_SOFTLY
-      - ACT_WHINE_SOFTLY
-
-  calm_sway:
-    fidelity: proxy
-    description: Gentle body roll used for calm checking and owner attention.
-    sequence:
-      - {command: euler, x: 0.10, y: 0.0, z: 0.0, duration_sec: 0.5}
-      - {command: euler, x: -0.10, y: 0.0, z: 0.0, duration_sec: 0.8}
-      - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.3}
-    actions:
-      - ACT_CHECK_OWNER
-
-  circle:
-    fidelity: proxy
-    description: Low-speed in-place turn used for circle and chase semantics.
-    sequence:
-      - {command: move, x: 0.0, y: 0.0, z: 0.8, duration_sec: 4.0}
-    actions:
-      - ACT_CHASE_TAIL
-      - ACT_CIRCLE_AROUND
-      - ACT_RUN_IN_CIRCLES_OR_CHASE
-      - ACT_RUN_IN_CIRCLES_OR_ZOOMIES
-      - ACT_SPIN_FRONT
-      - ACT_ZOOMIE_CIRCLE
-
-  excited_play:
-    fidelity: proxy
-    description: SportMode Hello proxy for energetic play.
-    sequence:
-      - {command: hello, duration_sec: 3.0}
-    actions:
-      - ACT_NIP_PLAYFUL
-      - ACT_SHAKE_TOY
-      - ACT_ZOOMIES
-
-  exit_scan:
-    fidelity: proxy
-    description: Short right scan followed by a cautious backward step.
-    sequence:
-      - {command: move, x: 0.0, y: 0.0, z: -0.45, duration_sec: 0.8}
-      - {command: move, x: -0.10, y: 0.0, z: 0.0, duration_sec: 0.8}
-    actions:
-      - ACT_SNIFF_EXCREMENT
-      - ACT_WALK_AWAY_OR_SHAKE_HEAD
-
-  feeding_pose:
-    fidelity: proxy
-    description: Body pitch proxy for eating, chewing, and bowl interaction.
-    sequence:
-      - {command: euler, x: 0.0, y: 0.18, z: 0.0, duration_sec: 1.0}
-      - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.3}
-    actions:
-      - ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD
-
-  grooming:
-    fidelity: proxy
-    # Go2 Scrape (1029) rears up on hind legs ("拜年/作揖") and can tip over;
-    # the safe Hello gesture is used instead for paw/scratch/grooming.
-    description: SportMode Hello proxy for paw, scratch, and grooming actions.
-    sequence:
-      - {command: hello, duration_sec: 2.0}
-    actions:
-      - ACT_LICK_PAWS_OR_FUR
-      - ACT_RUB_BODY_AGAINST_OBJECT
-      - ACT_SCRATCH_BED_OR_GROUND
-      - ACT_SCRATCH_DELIVERY_BOX_WITH_PAW
-      - ACT_SCRATCH_DOOR
-      - ACT_SCRATCH_EAR_WITH_HIND_LEG
-      - ACT_SCRATCH_OBJECT_GENTLY
-      - ACT_SCRATCH_SOIL_OR_GROUND
-      - ACT_SCRATCH_TISSUE_WITH_PAW
-      - ACT_SHAKE_OFF_WATER
-      - ACT_STAND_AND_SCRATCH_HIGH
-
-  guard_scan:
-    fidelity: proxy
-    description: Slow left-right body scan used while guarding.
-    sequence:
-      - {command: move, x: 0.0, y: 0.0, z: 0.45, duration_sec: 1.0}
-      - {command: move, x: 0.0, y: 0.0, z: -0.45, duration_sec: 2.0}
-      - {command: move, x: 0.0, y: 0.0, z: 0.45, duration_sec: 1.0}
-    actions:
-      - ACT_GUARD_DOOR
-
-  inspect_search:
-    fidelity: proxy
-    description: Conservative pitch and yaw search for inspection interactions.
-    sequence:
-      - {command: euler, x: 0.0, y: 0.12, z: 0.0, duration_sec: 0.4}
-      - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.2}
-      - {command: move, x: 0.0, y: 0.0, z: 0.35, duration_sec: 0.5}
-      - {command: move, x: 0.0, y: 0.0, z: -0.35, duration_sec: 1.0}
-      - {command: move, x: 0.0, y: 0.0, z: 0.35, duration_sec: 0.5}
-    actions:
-      - ACT_BITE_AND_SHAKE_SLIPPERS_SOCKS_OR_TOY
-      - ACT_BITE_DELIVERY_BOX
-      - ACT_CARRY_AND_DROP_OBJECT_AGAIN
-      - ACT_CARRY_AND_HIDE_OBJECT
-      - ACT_CARRY_DELIVERY_BOX_TO_PERSON
-      - ACT_CARRY_SLIPPERS_SOCKS_OR_TOY_TO_OWNER
-      - ACT_CARRY_TISSUE_TO_PERSON
-      - ACT_CRAWL_THROUGH_LOW_GAP
-      - ACT_LEAN_AGAINST_DOOR
-      - ACT_NIBBLE_OBJECT
-      - ACT_RUMMAGE_THROUGH_TRASH_CAN
-      - ACT_SNIFF_AROUND_DOOR
-      - ACT_SNIFF_DELIVERY_BOX
-      - ACT_SNIFF_OBJECT
-      - ACT_SNIFF_SLIPPERS_SOCKS_OR_TOY
-      - ACT_SNIFF_TISSUE
-      - ACT_SNIFF_TRASH_CAN
-      - ACT_TOUCH_OR_CARRY_OBJECT_WITH_MOUTH
-      - ACT_TROT_STOP_AND_SNIFF
-      - ACT_WALK_SLOWLY_AND_SNIFF_GROUND
-
-  investigate_pose:
-    fidelity: proxy
-    description: Forward body pitch used after navigation for close inspection.
-    sequence:
-      - {command: euler, x: 0.0, y: 0.18, z: 0.0, duration_sec: 0.8}
-      - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.3}
-    actions:
-      - ACT_LICK_FUR_OR_PAWS
-      - ACT_SNIFF_AND_CIRCLE_AT_TOILET_SPOT
-
-  object_carry_proxy:
-    fidelity: proxy
-    description: Cautious forward body motion; no grasp or carried-object claim.
-    sequence:
-      - {command: move, x: 0.10, y: 0.0, z: 0.0, duration_sec: 1.0}
-    actions:
-      - ACT_OBJECT_BRING
-
-  object_drop_proxy:
-    fidelity: proxy
-    description: Downward body pitch; Go2 high-level API cannot open a mouth.
-    sequence:
-      - {command: euler, x: 0.0, y: 0.18, z: 0.0, duration_sec: 0.8}
-      - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.2}
-    actions:
-      - ACT_OBJECT_DROP
-
-  object_fetch_proxy:
-    fidelity: proxy
-    # Go2 FrontPounce (1032) lunges forward ("向前扑") and is unsafe; use the
-    # safe Hello gesture instead.
-    description: Hello interaction attempt; no grasp or fetch claim.
-    sequence:
-      - {command: hello, duration_sec: 2.0}
-    actions:
-      - ACT_OBJECT_FETCH
-
-  patrol_scan:
-    fidelity: proxy
-    description: Slow alternating yaw scan for patrol-like expression.
-    sequence:
-      - {command: move, x: 0.0, y: 0.0, z: 0.45, duration_sec: 1.0}
-      - {command: move, x: 0.0, y: 0.0, z: -0.45, duration_sec: 2.0}
-      - {command: move, x: 0.0, y: 0.0, z: 0.45, duration_sec: 1.0}
-    actions:
-      - ACT_PATROL
-      - ACT_PATROL_ALONG_WALL
-
-  paw_hello:
-    fidelity: proxy
-    description: SportMode Hello front-leg gesture for paw interactions.
-    sequence:
-      - {command: hello, duration_sec: 2.0}
-    actions:
-      - ACT_PAW_AT_BOWL_OR_TREAT_CABINET
-      - ACT_PAW_AT_OWNER
-      - ACT_PAW_AT_SLIPPERS_SOCKS_OR_TOY
-      - ACT_PAW_GENTLY_AT_OTHER
-      - ACT_PAW_LEG
-      - ACT_PLACE_FRONT_PAWS_ON_OWNER_FOR_ATTENTION
-
-  paw_scrape:
-    fidelity: proxy
-    description: SportMode Hello gesture for paw contact attempts.
-    sequence:
-      - {command: hello, duration_sec: 2.0}
-    actions:
-      - ACT_BAT_TOY
-      - ACT_KNOCK_OVER_OBJECT
-      - ACT_PAW_AT_MUZZLE
-      - ACT_PUSH_OBJECT_WITH_PAW
-
-  pounce:
-    fidelity: proxy
-    # Go2 FrontPounce (1032) lunges forward ("向前扑") and is unsafe; use the
-    # safe Hello gesture instead for jump/pounce proxies.
-    description: SportMode Hello for jump and pounce actions.
-    sequence:
-      - {command: hello, duration_sec: 2.0}
-    actions:
-      - ACT_JUMP_PAW
-      - ACT_POUNCE_ON_SLIPPERS_SOCKS_OR_TOY
-      - ACT_POUNCE_OR_SIDE_HOP_GENTLY
-
-  recovery:
-    fidelity: proxy
-    description: SportMode RecoveryStand for all wake-up variants.
-    sequence:
-      - {command: recovery_stand, duration_sec: 2.5}
-    actions:
-      - ACT_GETUP_BOUNCE
-      - ACT_GETUP_CRAWL
-      - ACT_GETUP_ROLL
-      - ACT_GETUP_SIT
-      - ACT_GETUP_STRETCH
-
-  rest_pose:
-    fidelity: proxy
-    description: SportMode StandDown for sleep, sploot, roll, and low poses.
-    sequence:
-      - {command: stand_down, duration_sec: 2.5}
-    actions:
-      - ACT_BARK_AND_LIE_DOWN_IF_NO_CHARGER
-      - ACT_FIND_PLACE_TO_LIE_DOWN
-      - ACT_LIE_BESIDE_OTHER_ANIMAL
-      - ACT_LIE_BY_DOOR
-      - ACT_ROLL_OVER_FOR_BELLY_RUB
-      - ACT_SHOW_BELLY
-      - ACT_SLEEP_BY_FEET
-      - ACT_SLEEP_CURLED_UP
-      - ACT_SLEEP_ON_BACK
-      - ACT_SLEEP_ON_SIDE
-      - ACT_SLEEP_ON_SIDE_CURLED_UP
-      - ACT_SLEEP_ON_STOMACH
-      - ACT_SPLOOT
-      - ACT_SPLoot_LIE_DOWN
-      - ACT_SQUAT_AND_ELIMINATE
-      - ACT_TRICK_ROLL_OVER
-
-  social_affection:
-    fidelity: proxy
-    description: SportMode Hello for friendly contact and attention semantics.
-    sequence:
-      - {command: hello, duration_sec: 2.0}
-    actions:
-      - ACT_ASK_CUDDLE
-      - ACT_FETCH_LEASH
-      - ACT_FETCH_TOY
-      - ACT_LICK
-      - ACT_NUZZLE_BODY
-      - ACT_PURR
-      - ACT_TROT_BOUNCE
-      - ACT_WAG_TAIL
-      - ACT_WINK
-
-  social_left:
-    fidelity: proxy
-    description: Small left body lean without blind translation near a target.
-    sequence:
-      - {command: euler, x: 0.12, y: 0.0, z: 0.0, duration_sec: 0.8}
-      - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.2}
-    actions:
-      - ACT_APPROACH_SLOWLY_SIDEWAYS
-      - ACT_BUMP_OTHER_GENTLY_WITH_RELAXED_BODY
-      - ACT_LOWER_HEAD_FLOP_EARS_WAG_TAIL
-      - ACT_RUN_AWAY_AND_LOOK_BACK
-      - ACT_SNIFF_BUTT_OR_TAIL
-      - ACT_SNIFF_FACE_OR_EARS
-      - ACT_SNIFF_TOWARD_OTHER_ANIMAL
-      - ACT_STOP_OBSERVE_AND_TILT_HEAD
-      - ACT_TOUCH_NOSE_OR_HEAD_GENTLY
-
-  social_right:
-    fidelity: proxy
-    description: Small right body lean without blind translation near a target.
-    sequence:
-      - {command: euler, x: -0.12, y: 0.0, z: 0.0, duration_sec: 0.8}
-      - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.2}
-    actions:
-      - ACT_CARRY_LEASH_TO_OWNER
-      - ACT_CARRY_TOY_AND_WAG_TAIL_IN_FRONT_OF_OWNER
-      - ACT_CIRCLE_EMPTY_BOWL_OR_WATER_DISH
-      - ACT_FOLLOW_AND_STAY_CLOSE_TO_OWNER
-      - ACT_GENTLY_MOUTH_PANTS_OR_HAND
-      - ACT_NUDGE_OR_RUB_AGAINST_OWNER_HAND
-      - ACT_NUDGE_OWNER_AND_LOOK_AT_FOOD_OR_DOOR
-      - ACT_RUB_AGAINST_LEG_OR_LEAN_ON_OWNER
-      - ACT_SIDE_HOP_WITH_PLAY_POSTURE
-      - ACT_SIT_BY_DOOR_AND_LOOK_BACK_AT_OWNER
-      - ACT_SIT_IN_FRONT_OF_OWNER_AND_LOOK_UP
-      - ACT_WAIT_BY_BOWL_OR_TREAT_CABINET
-
-  stationary:
-    fidelity: proxy
-    description: StopMove keeps the current pose and prevents chassis motion.
-    sequence:
-      - {command: stop_move, duration_sec: 0.2}
-    actions:
-      - ACT_FLIP_BODY
-      - ACT_IGNORE_DELIVERY_BOX
-      - ACT_IGNORE_DOOR
-      - ACT_IGNORE_SLIPPERS_SOCKS_OR_TOY
-      - ACT_IGNORE_TISSUE
-      - ACT_IGNORE_TRASH_CAN
-      - ACT_RETURN_TO_CHARGER
-      - ACT_RETURN_TO_DOG_BED_FOR_CHARGING
-      - ACT_SLOW_DOWN_IN_RESPONSE_TO_OWNER
-      - ACT_TWITCH_OR_KICK_LEGS
-
+    - ACT_INTERACT_GIVE_PAW
+    - ACT_INTERACT_HIGH_FIVE
+    - ACT_PAW_AT_OWNER
+    - ACT_PAW_LEG
   stretch:
-    fidelity: proxy
-    description: SportMode Hello proxy for stretch body actions.
+    fidelity: exact
+    description: 原生 Stretch 伸懒腰（1017），等待 5 秒；没有动作完成反馈。
+    commanded_posture: standing
+    timeout_sec: 7.0
     sequence:
-      - {command: hello, duration_sec: 2.5}
+    - command: stretch
+      duration_sec: 5.0
     actions:
-      - ACT_STRETCH
-      - ACT_STRETCH_BODY
-
-  timid_retreat:
+    - ACT_STRETCH
+    - ACT_STRETCH_BODY
+    - ACT_COMFY_STRETCH
+  ordinary_getup:
     fidelity: proxy
-    description: Short backward step and lowered body expression for fear.
+    description: 普通 StandUp 起身代理，不执行爬起、滚起或弹跳；不用跌倒恢复 RecoveryStand。
+    commanded_posture: standing
     sequence:
-      - {command: move, x: -0.10, y: 0.0, z: 0.0, duration_sec: 0.8}
-      - {command: euler, x: 0.0, y: -0.12, z: 0.0, duration_sec: 0.7}
-      - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.2}
+    - command: stand_up
+      duration_sec: 2.5
     actions:
-      - ACT_CLING_LEG
-      - ACT_COVER_EYES
-      - ACT_LICK_FACE
-      - ACT_LICK_SELF
-      - ACT_PACE
-      - ACT_SEEK_PETS
-      - ACT_TUCK_TAIL
-
-  waist_twist:
+    - ACT_GETUP_CRAWL
+    - ACT_GETUP_ROLL
+    - ACT_GETUP_BOUNCE
+  lie_down:
+    fidelity: exact
+    description: 原生 StandDown 趴下，过渡 2.5 秒后保持趴姿 6 秒；单元内不起身。
+    commanded_posture: lying
+    timeout_sec: 11.0
+    sequence:
+    - command: stand_down
+      duration_sec: 2.5
+    - command: stop_move
+      duration_sec: 6.0
+    actions:
+    - ACT_SPLOOT
+    - ACT_SPLoot_LIE_DOWN
+  prone_rest:
     fidelity: proxy
-    description: Left-right in-place body twist closing the feeding ritual.
+    description: 原生 StandDown 过渡 2.5 秒后保持趴姿 6 秒；不实现侧卧、仰卧、蜷缩、闭眼、发抖或叫声；目标位置由上游导航负责。
+    commanded_posture: lying
+    timeout_sec: 11.0
     sequence:
-      - {command: move, x: 0.0, y: 0.0, z: 0.45, duration_sec: 1.0}
-      - {command: move, x: 0.0, y: 0.0, z: -0.45, duration_sec: 2.0}
-      - {command: move, x: 0.0, y: 0.0, z: 0.45, duration_sec: 1.0}
+    - command: stand_down
+      duration_sec: 2.5
+    - command: stop_move
+      duration_sec: 6.0
     actions:
-      - ACT_TWIST_WAIST_LEFT_RIGHT
-
-  yawn:
+    - ACT_SLEEP_CURLED_UP
+    - ACT_SLEEP_ON_STOMACH
+    - ACT_SLEEP_ON_SIDE_CURLED_UP
+    - ACT_SLEEP_ON_SIDE
+    - ACT_SLEEP_ON_BACK
+    - ACT_SLEEP_BY_FEET
+    - ACT_LIE_BESIDE_OTHER_ANIMAL
+    - ACT_LIE_BY_DOOR
+    - ACT_TRICK_PLAY_DEAD
+    - ACT_OWNER_UNHAPPY
+    - ACT_HIDE_SHRINK
+    - ACT_FREEZE_SHAKE
+    - ACT_BARK_AND_LIE_DOWN_IF_NO_CHARGER
+  owner_greeting:
     fidelity: proxy
-    description: Slow pitch-and-return body gesture; no facial yawn actuator.
+    description: 原生 Hello 招手表达迎接或告别。
+    commanded_posture: standing
+    timeout_sec: 4.0
     sequence:
-      - {command: euler, x: 0.0, y: -0.15, z: 0.0, duration_sec: 1.2}
-      - {command: euler, x: 0.0, y: 0.0, z: 0.0, duration_sec: 0.4}
+    - command: hello
+      duration_sec: 2.0
     actions:
-      - ACT_YAWN
+    - ACT_EXPRESS_MISS_YOU
+    - ACT_OWNER_GOING_OUT
+  look_up:
+    fidelity: proxy
+    description: 机身小幅仰俯表达抬头；无独立头颈关节或主人方位控制。
+    commanded_posture: standing
+    sequence:
+    - command: euler
+      x: 0.0
+      y: -0.12
+      z: 0.0
+      duration_sec: 0.8
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    actions:
+    - ACT_RAISE_HEAD
+  body_observation:
+    fidelity: proxy
+    description: 站立时小幅机身左右观察；无独立头部或身份识别，不执行巡逻位移。
+    commanded_posture: standing
+    sequence:
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.18
+      duration_sec: 0.8
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: -0.18
+      duration_sec: 1.2
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    actions:
+    - ACT_CHECK_OWNER
+    - ACT_STOP_OBSERVE_AND_TILT_HEAD
+    - ACT_GUARD_DOOR
+  body_investigation:
+    fidelity: proxy
+    description: 站立时机身俯仰观察代理；不声称视觉检测或接触。
+    commanded_posture: standing
+    sequence:
+    - command: euler
+      x: 0.0
+      y: 0.15
+      z: 0.0
+      duration_sec: 0.8
+    - command: euler
+      x: 0.0
+      y: -0.12
+      z: 0.0
+      duration_sec: 0.8
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    actions:
+    - ACT_INTERACT_EXPLORE
+    - ACT_NON_INTERACT_EXPLORE
+  sniff_expression:
+    fidelity: proxy
+    description: 到位后的机身低头观察代理；不声称嗅觉、独立头部或物体接触。
+    commanded_posture: standing
+    sequence:
+    - command: euler
+      x: 0.0
+      y: 0.15
+      z: 0.0
+      duration_sec: 0.8
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    actions:
+    - ACT_SNIFF_BOWL_AND_WAIT_FOR_FOOD
+    - ACT_SNIFF_EXCREMENT
+    - ACT_SNIFF_AROUND_DOOR
+    - ACT_SNIFF_DELIVERY_BOX
+    - ACT_SNIFF_OBJECT
+    - ACT_SNIFF_SLIPPERS_SOCKS_OR_TOY
+    - ACT_SNIFF_TISSUE
+    - ACT_SNIFF_TRASH_CAN
+    - ACT_SNIFF_BUTT_OR_TAIL
+    - ACT_SNIFF_FACE_OR_EARS
+    - ACT_SNIFF_TOWARD_OTHER_ANIMAL
+  vocal_body_expression:
+    fidelity: proxy
+    description: 小幅机身抬起的发声身体表达代理；叫声由行为音频负责。
+    commanded_posture: standing
+    sequence:
+    - command: euler
+      x: 0.0
+      y: -0.1
+      z: 0.0
+      duration_sec: 0.7
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    actions:
+    - ACT_BARK_AT_OBJECT
+    - ACT_BARK_OR_WHINE_BRIEFLY
+    - ACT_BARK_TENSE
+    - ACT_WHIMPER
+    - ACT_WHINE_OR_VOCALIZE_SOFTLY
+    - ACT_WHINE
+  quiet_rest:
+    fidelity: proxy
+    description: 睡眠阶段静止保持原姿态；声音由行为音频负责，不触发起身。
+    commanded_posture: ''
+    sequence:
+    - command: stop_move
+      duration_sec: 2.0
+    actions:
+    - ACT_WHINE_SOFTLY
+  turn_expression:
+    fidelity: proxy
+    description: Nav2 Spin 原地转一圈的转圈表达代理；不追逐目标、不绕物体行走。
+    commanded_posture: standing
+    timeout_sec: 25.0
+    sequence:
+    - command: nav2_spin
+      turns: 1
+      duration_sec: 20.0
+    actions:
+    - ACT_CHASE_TAIL
+    - ACT_RUN_IN_CIRCLES_OR_CHASE
+    - ACT_RUN_IN_CIRCLES_OR_ZOOMIES
+    - ACT_SPIN_FRONT
+    - ACT_ZOOMIE_CIRCLE
+  still:
+    fidelity: exact
+    description: 原生 StopMove 停止或保持，不触发起身。
+    commanded_posture: ''
+    sequence:
+    - command: stop_move
+      duration_sec: 0.2
+    actions:
+    - ACT_IGNORE_DELIVERY_BOX
+    - ACT_IGNORE_DOOR
+    - ACT_IGNORE_SLIPPERS_SOCKS_OR_TOY
+    - ACT_IGNORE_TISSUE
+    - ACT_IGNORE_TRASH_CAN
+    - ACT_SLOW_DOWN_IN_RESPONSE_TO_OWNER
+    - ACT_PERCEPTION_RESPOND_PERSON_FALL
+    - ACT_PERCEPTION_RESPOND_STOP_GESTURE
+    - ACT_SYSTEM_EMERGENCY_STOP
+  roam_look_down_up:
+    fidelity: proxy
+    description: Look down, then raise the body pitch and return to neutral.
+    sequence:
+    - command: euler
+      x: 0.0
+      y: 0.15
+      z: 0.0
+      duration_sec: 1.2
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    - command: euler
+      x: 0.0
+      y: -0.12
+      z: 0.0
+      duration_sec: 1.5
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    actions:
+    - ACT_ROAM_LOOK_DOWN_UP
+    commanded_posture: standing
+  roam_scan_head_up:
+    fidelity: proxy
+    description: Scan left and right with body yaw, then raise the body pitch.
+    sequence:
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.2
+      duration_sec: 1.0
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: -0.2
+      duration_sec: 1.0
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    - command: euler
+      x: 0.0
+      y: -0.12
+      z: 0.0
+      duration_sec: 1.5
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    actions:
+    - ACT_ROAM_SCAN_HEAD_UP
+    commanded_posture: standing
+  roam_stretch_scan:
+    fidelity: composed
+    description: 原生 Stretch 伸懒腰，并组合原地 Euler 左右观察或扭动机身。
+    sequence:
+    - command: stretch
+      duration_sec: 5.0
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.2
+      duration_sec: 1.0
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: -0.2
+      duration_sec: 1.0
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    actions:
+    - ACT_ROAM_STRETCH_SCAN
+    commanded_posture: standing
+  roam_twist_stretch:
+    fidelity: composed
+    description: 原生 Stretch 伸懒腰，并组合原地 Euler 左右观察或扭动机身。
+    sequence:
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.2
+      duration_sec: 1.0
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: -0.2
+      duration_sec: 1.0
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    - command: stretch
+      duration_sec: 5.0
+    actions:
+    - ACT_ROAM_TWIST_STRETCH
+    commanded_posture: standing
+  roam_lie_stand:
+    fidelity: exact
+    description: 原生 StandDown 趴下过渡后保持 6 秒，再显式 StandUp；固定等待不代表姿态确认。
+    sequence:
+    - command: stand_down
+      duration_sec: 2.5
+    - command: stop_move
+      duration_sec: 6.0
+    - command: stand_up
+      duration_sec: 2.5
+    actions:
+    - ACT_ROAM_LIE_STAND
+    commanded_posture: standing
+  roam_lower_head_pause:
+    fidelity: proxy
+    description: Briefly lower the body pitch, restore it, then hold still.
+    sequence:
+    - command: euler
+      x: 0.0
+      y: 0.15
+      z: 0.0
+      duration_sec: 0.8
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    - command: stop_move
+      duration_sec: 1.2
+    actions:
+    - ACT_ROAM_LOWER_HEAD_PAUSE
+    commanded_posture: standing
+  roam_observe_pause:
+    fidelity: proxy
+    description: Make a short left-right body-yaw observation, then hold still.
+    sequence:
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.15
+      duration_sec: 0.6
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: -0.15
+      duration_sec: 0.6
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    - command: stop_move
+      duration_sec: 1.2
+    actions:
+    - ACT_ROAM_OBSERVE_PAUSE
+    commanded_posture: standing
+  roam_head_up_twist:
+    fidelity: proxy
+    description: Raise the body pitch, then twist left and right.
+    sequence:
+    - command: euler
+      x: 0.0
+      y: -0.12
+      z: 0.0
+      duration_sec: 1.5
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.2
+      duration_sec: 1.0
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: -0.2
+      duration_sec: 1.0
+    - command: euler
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      duration_sec: 0.3
+    actions:
+    - ACT_ROAM_HEAD_UP_TWIST
+    commanded_posture: standing
+  safe_task_proxy:
+    fidelity: proxy
+    description: 小幅身体左右观察再回正，替代未接入的目标/路径/接触动作；不实际接触或完成目标任务。
+    commanded_posture: standing
+    timeout_sec: 8.0
+    sequence:
+    - command: euler
+      z: 0.1
+      duration_sec: 0.7
+    - command: euler
+      z: -0.1
+      duration_sec: 0.7
+    - command: euler
+      duration_sec: 0.4
+    actions:
+    - ACT_APPROACH_SLOWLY_SIDEWAYS
+    - ACT_ASK_CUDDLE
+    - ACT_BUMP_OTHER_GENTLY_WITH_RELAXED_BODY
+    - ACT_CIRCLE_EMPTY_BOWL_OR_WATER_DISH
+    - ACT_CLING_LEG
+    - ACT_CRAWL_THROUGH_LOW_GAP
+    - ACT_FIND_PLACE_TO_LIE_DOWN
+    - ACT_FOLLOW_AND_STAY_CLOSE_TO_OWNER
+    - ACT_HIDE_BEHIND
+    - ACT_LEAN_AGAINST_DOOR
+    - ACT_NUDGE_OR_RUB_AGAINST_OWNER_HAND
+    - ACT_NUDGE_OWNER_AND_LOOK_AT_FOOD_OR_DOOR
+    - ACT_PACE
+    - ACT_PATROL
+    - ACT_PATROL_ALONG_WALL
+    - ACT_RUB_AGAINST_LEG_OR_LEAN_ON_OWNER
+    - ACT_RUB_BODY_AGAINST_OBJECT
+    - ACT_RUMMAGE_THROUGH_TRASH_CAN
+    - ACT_RUN_AWAY_AND_LOOK_BACK
+    - ACT_SEEK_PETS
+    - ACT_SNIFF_AND_CIRCLE_AT_TOILET_SPOT
+    - ACT_TOUCH_NOSE_OR_HEAD_GENTLY
+    - ACT_TROT_STOP_AND_SNIFF
+    - ACT_WALK_AWAY_OR_SHAKE_HEAD
+    - ACT_WALK_SLOWLY_AND_SNIFF_GROUND
+    - ACT_ZOOMIES
+  safe_paw_proxy:
+    fidelity: proxy
+    description: 原生 Hello，替代抓挠/跳扑表达；不跳跃，不接触目标。
+    commanded_posture: standing
+    timeout_sec: 8.0
+    sequence:
+    - command: hello
+      duration_sec: 3.0
+    actions:
+    - ACT_BAT_TOY
+    - ACT_JUMP_PAW
+    - ACT_KNOCK_OVER_OBJECT
+    - ACT_PAW_AT_BOWL_OR_TREAT_CABINET
+    - ACT_PAW_AT_MUZZLE
+    - ACT_PAW_AT_SLIPPERS_SOCKS_OR_TOY
+    - ACT_PAW_GENTLY_AT_OTHER
+    - ACT_PLACE_FRONT_PAWS_ON_OWNER_FOR_ATTENTION
+    - ACT_POUNCE_ON_SLIPPERS_SOCKS_OR_TOY
+    - ACT_POUNCE_OR_SIDE_HOP_GENTLY
+    - ACT_PUSH_OBJECT_WITH_PAW
+    - ACT_SCRATCH_BED_OR_GROUND
+    - ACT_SCRATCH_DELIVERY_BOX_WITH_PAW
+    - ACT_SCRATCH_DOOR
+    - ACT_SCRATCH_EAR_WITH_HIND_LEG
+    - ACT_SCRATCH_OBJECT_GENTLY
+    - ACT_SCRATCH_SOIL_OR_GROUND
+    - ACT_SCRATCH_TISSUE_WITH_PAW
+    - ACT_SIDE_HOP_WITH_PLAY_POSTURE
+    - ACT_STAND_AND_SCRATCH_HIGH
+    - ACT_TROT_BOUNCE
+  safe_object_proxy:
+    fidelity: proxy
+    description: 低幅低头再回正，替代口部/搬运表达；不实际抓取、运输或释放物体。
+    commanded_posture: standing
+    timeout_sec: 8.0
+    sequence:
+    - command: euler
+      y: 0.1
+      duration_sec: 1.0
+    - command: euler
+      duration_sec: 0.5
+    actions:
+    - ACT_BITE_AND_SHAKE_SLIPPERS_SOCKS_OR_TOY
+    - ACT_BITE_DELIVERY_BOX
+    - ACT_CARRY_AND_DROP_OBJECT_AGAIN
+    - ACT_CARRY_AND_HIDE_OBJECT
+    - ACT_CARRY_DELIVERY_BOX_TO_PERSON
+    - ACT_CARRY_LEASH_TO_OWNER
+    - ACT_CARRY_SLIPPERS_SOCKS_OR_TOY_TO_OWNER
+    - ACT_CARRY_TISSUE_TO_PERSON
+    - ACT_CARRY_TOY_AND_WAG_TAIL_IN_FRONT_OF_OWNER
+    - ACT_FETCH_LEASH
+    - ACT_FETCH_TOY
+    - ACT_GENTLY_MOUTH_PANTS_OR_HAND
+    - ACT_NIBBLE_OBJECT
+    - ACT_NIP_PLAYFUL
+    - ACT_OBJECT_BRING
+    - ACT_OBJECT_DROP
+    - ACT_OBJECT_FETCH
+    - ACT_SHAKE_TOY
+    - ACT_TOUCH_OR_CARRY_OBJECT_WITH_MOUTH
+  safe_face_tail_proxy:
+    fidelity: proxy
+    description: 小幅身体左右倾摆再回正，替代面部/舔舐/尾巴表达；无对应生物器官动作。
+    commanded_posture: standing
+    timeout_sec: 8.0
+    sequence:
+    - command: euler
+      x: 0.08
+      duration_sec: 0.8
+    - command: euler
+      x: -0.08
+      duration_sec: 0.8
+    - command: euler
+      duration_sec: 0.4
+    actions:
+    - ACT_COVER_EYES
+    - ACT_LICK
+    - ACT_LICK_FACE
+    - ACT_LICK_FUR_OR_PAWS
+    - ACT_LICK_PAWS_OR_FUR
+    - ACT_LICK_SELF
+    - ACT_LOWER_HEAD_FLOP_EARS_WAG_TAIL
+    - ACT_PURR
+    - ACT_TUCK_TAIL
+    - ACT_WAG_TAIL
+    - ACT_WINK
+  safe_roll_proxy:
+    fidelity: proxy
+    description: 原生 Stretch，替代翻滚/露肚表达；不执行翻滚或翻腾。
+    commanded_posture: standing
+    timeout_sec: 8.0
+    sequence:
+    - command: stretch
+      duration_sec: 5.0
+    actions:
+    - ACT_FLIP_BODY
+    - ACT_ROLL_OVER_FOR_BELLY_RUB
+    - ACT_SHOW_BELLY
+    - ACT_TRICK_ROLL_OVER
+    - ACT_TWITCH_OR_KICK_LEGS
+  safe_charging_proxy:
+    fidelity: proxy
+    description: StopMove 后恢复平衡站立，替代返充表达；不导航至充电桩，不对接，不确认充电。
+    commanded_posture: standing
+    timeout_sec: 8.0
+    sequence:
+    - command: stop_move
+      duration_sec: 0.3
+    actions:
+    - ACT_RETURN_TO_CHARGER
+    - ACT_RETURN_TO_DOG_BED_FOR_CHARGING
+  safe_biological_proxy:
+    fidelity: proxy
+    description: 原生 Sit 后 StandUp，替代排泄表达；不实现生物行为。
+    commanded_posture: standing
+    timeout_sec: 8.0
+    sequence:
+    - command: sit
+      duration_sec: 2.5
+    - command: stand_up
+      duration_sec: 2.5
+    actions:
+    - ACT_SQUAT_AND_ELIMINATE
+unsupported_actions: {}
